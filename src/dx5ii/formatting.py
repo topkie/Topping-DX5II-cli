@@ -7,10 +7,17 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Sequence
 
+from .constants import REMOTE_MUTE_MODES
+
 #: Fields whose boolean means something more specific than yes/no.
 BOOL_TEXT: dict[str, dict[bool, str]] = {
     "high_gain": {True: "high", False: "low"},
     "dc_detect_sensitivity": {True: "high", False: "low"},
+}
+
+#: Values pushed by the device that arrive as a bare enum index.
+PUSHED_TEXT: dict[str, Sequence[str]] = {
+    "remote_mute_mode": REMOTE_MUTE_MODES,
 }
 
 #: ``(group title, field names)`` for the full ``get`` listing.
@@ -40,6 +47,18 @@ def format_value(key: str, value: Any) -> str:
     return str(value)
 
 
+def _pushed_rows(pushed: dict[str, Any]) -> Iterable[tuple[str, Any]]:
+    """Yield pushed values, naming the ones the device sends as raw indices."""
+    for key, value in pushed.items():
+        if key.endswith("_name"):
+            continue  # redundant next to the index it names
+        table = PUSHED_TEXT.get(key)
+        if table is not None and isinstance(value, int) and not isinstance(value, bool):
+            if 0 <= value < len(table):
+                value = table[value]
+        yield key, value
+
+
 def _print_rows(title: str, rows: Iterable[tuple[str, Any]]) -> None:
     print(f"[{title}]")
     for key, value in rows:
@@ -63,7 +82,7 @@ def print_snapshot(snap: dict[str, Any]) -> None:
 
     pushed = snap.get("pushed") or {}
     if pushed:
-        _print_rows("pushed by device", pushed.items())
+        _print_rows("pushed by device", _pushed_rows(pushed))
 
     sampling = snap.get("sampling")
     if sampling:

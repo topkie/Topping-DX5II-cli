@@ -27,6 +27,7 @@ from .constants import (
     PROTOCOL_INTERFACE,
     PT_READ,
     PT_WRITE,
+    REMOTE_MUTE_MODES,
     SETTINGS_MIN_WORDS,
     VID,
 )
@@ -279,6 +280,9 @@ class Dx5ii:
                 pushed["bluetooth_connected"] = frame["data"] != 0
             elif cmd == CMD_REMOTE_MUTE_MODE:
                 pushed["remote_mute_mode"] = frame["data"]
+                pushed["remote_mute_mode_name"] = (
+                    REMOTE_MUTE_MODES[frame["data"]]
+                    if 0 <= frame["data"] < len(REMOTE_MUTE_MODES) else None)
 
         if include_configs:
             result["configs"] = interpret_config_upload(self.read_config_upload())
