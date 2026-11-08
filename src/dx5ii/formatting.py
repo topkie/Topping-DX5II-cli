@@ -50,8 +50,8 @@ def format_value(key: str, value: Any) -> str:
 def _pushed_rows(pushed: dict[str, Any]) -> Iterable[tuple[str, Any]]:
     """Yield pushed values, naming the ones the device sends as raw indices."""
     for key, value in pushed.items():
-        if key.endswith("_name"):
-            continue  # redundant next to the index it names
+        if key.endswith("_name") or key.endswith("_raw"):
+            continue  # redundant next to the value it annotates
         table = PUSHED_TEXT.get(key)
         if table is not None and isinstance(value, int) and not isinstance(value, bool):
             if 0 <= value < len(table):

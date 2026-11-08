@@ -329,11 +329,41 @@ def field_state(snap: dict[str, Any], name: str) -> Any:
     return value
 
 
+def field_raw(snap: dict[str, Any], name: str) -> Any:
+    """Return the numeric value behind :func:`field_state`.
+
+    Enums decode to their display name, so JSON consumers that want the device
+    index use this alongside the name: ``{"output": "hp_balanced",
+    "output_raw": 4}``.  Fields that are already numeric (masks, volumes,
+    counters) return the same value as :func:`field_state`.
+    """
+    spec = FIELD_SPECS.get(name)
+    if spec is None:
+        return None
+    kind, key = spec[1], spec[3]
+
+    settings = snap.get("settings") or {}
+    pushed = snap.get("pushed") or {}
+    if key == "name":
+        return None
+    if key == "peq_enabled":
+        value = pushed.get("peq_enabled")
+        return None if value is None else int(bool(value))
+    if key == "remote_mute_mode":
+        return pushed.get("remote_mute_mode_raw")
+    if kind == "enum":
+        raw = settings.get(key + "_raw")
+        if raw is not None:
+            return raw
+    return settings.get(key)
+
+
 __all__ = [
     "FIELD_SPECS",
     "FIELD_ACTIONS",
     "encode_field",
     "field_state",
+    "field_raw",
     "resolve_output",
     "resolve_config",
 ]

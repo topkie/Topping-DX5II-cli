@@ -37,6 +37,7 @@ from .fields import (
     FIELD_ACTIONS,
     FIELD_SPECS,
     encode_field,
+    field_raw,
     field_state,
     resolve_config,
     resolve_output,
@@ -80,6 +81,7 @@ __all__ = [
     "FIELD_ACTIONS",
     "encode_field",
     "field_state",
+    "field_raw",
     "resolve_output",
     "resolve_config",
     # EQ presets

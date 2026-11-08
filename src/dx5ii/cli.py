@@ -29,7 +29,7 @@ from .constants import (
 )
 from .device import Dx5ii, list_interfaces
 from .errors import Dx5iiError
-from .fields import FIELD_ACTIONS, FIELD_SPECS, encode_field, field_state
+from .fields import FIELD_ACTIONS, FIELD_SPECS, encode_field, field_raw, field_state
 from .formatting import print_field_rows, print_snapshot, print_switch_report
 from .peq import (
     create_preset,
@@ -175,7 +175,11 @@ def _cmd_get(path: Optional[str], fields: Sequence[str], as_json: bool) -> int:
         if name not in FIELD_SPECS:
             print(f"error: unknown field {name!r}", file=sys.stderr)
             return 2
-        selected[name] = field_state(snap, name)
+        value = field_state(snap, name)
+        selected[name] = value
+        raw = field_raw(snap, name)
+        if isinstance(value, str) and raw is not None:
+            selected[name + "_raw"] = raw
 
     if as_json:
         print(json.dumps(selected, indent=2, ensure_ascii=False))
@@ -206,6 +210,9 @@ def _cmd_set(path: Optional[str], pairs: Sequence[str], as_json: bool) -> int:
         name = item["field"]
         item["from"] = field_state(before, name)
         item["observed"] = field_state(after, name)
+        if isinstance(item["from"], str) or isinstance(item["observed"], str):
+            item["from_raw"] = field_raw(before, name)
+            item["observed_raw"] = field_raw(after, name)
         item["changed"] = item["from"] != item["observed"]
         if not item["changed"] and name not in FIELD_ACTIONS:
             ok = False

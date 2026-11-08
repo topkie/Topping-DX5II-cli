@@ -279,10 +279,11 @@ class Dx5ii:
             elif cmd == CMD_BLUETOOTH_STATE:
                 pushed["bluetooth_connected"] = frame["data"] != 0
             elif cmd == CMD_REMOTE_MUTE_MODE:
-                pushed["remote_mute_mode"] = frame["data"]
-                pushed["remote_mute_mode_name"] = (
-                    REMOTE_MUTE_MODES[frame["data"]]
-                    if 0 <= frame["data"] < len(REMOTE_MUTE_MODES) else None)
+                value = frame["data"]
+                pushed["remote_mute_mode_raw"] = value
+                pushed["remote_mute_mode"] = (
+                    REMOTE_MUTE_MODES[value]
+                    if 0 <= value < len(REMOTE_MUTE_MODES) else value)
 
         if include_configs:
             result["configs"] = interpret_config_upload(self.read_config_upload())

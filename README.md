@@ -42,6 +42,12 @@ dx5ii --set-output hp_balanced --set-config IER-M7.Harman
 The first line of `dx5ii` output carries the device's firmware version, read from the USB
 `bcdDevice` descriptor (`release_number` in JSON), e.g. `firmware=2.58`.
 
+`--json` keeps the readable name as the value and puts the device index beside it under
+`<key>_raw`: `{"output": "hp_balanced", "output_raw": 4}`. The same holds for the `before` /
+`after` blocks of a switch report. Option-name arrays carry their mask in the settings block
+(`output_option_mask`), and booleans stay booleans. Scripts that prefer numbers read the `*_raw`
+key; nothing has to be parsed out of a display string.
+
 Field access:
 
 ```bash

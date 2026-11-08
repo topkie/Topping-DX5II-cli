@@ -38,6 +38,11 @@ dx5ii --set-output hp_balanced --set-config IER-M7.Harman
 `dx5ii` 输出的第一行带设备固件版本，取自 USB `bcdDevice` 描述符（JSON 里的 `release_number`），
 形如 `firmware=2.58`。
 
+`--json` 以可读名字作为值，设备索引放在旁边的 `<key>_raw`
+（`{"output": "hp_balanced", "output_raw": 4}`）；切换报告的 `before` / `after` 同样如此。
+选项名字数组的掩码在 settings 块里（`output_option_mask`），布尔字段保持布尔。偏好数字的脚本读
+`*_raw` 键即可，不需要从显示字符串里反解析。
+
 字段读写：
 
 ```bash

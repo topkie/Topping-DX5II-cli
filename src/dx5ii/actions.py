@@ -28,6 +28,7 @@ def state_summary(snap: dict[str, Any]) -> dict[str, Any]:
         "output": settings.get("output"),
         "output_raw": settings.get("output_raw"),
         "input": settings.get("input"),
+        "input_raw": settings.get("input_raw"),
         "config_index": index,
         "config_name": configs.get("current_name"),
         "preview_active": preview.get("preview_active"),
