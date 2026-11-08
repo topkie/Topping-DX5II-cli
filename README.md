@@ -1,0 +1,325 @@
+# dx5ii
+
+[中文](#中文) · [English](#english)
+
+控制 Topping DX5 II（VID `0x152A` / PID `0x8750`，控制协议走 HID `MI_02`）的 Python 包与命令行工具：
+读全部设备状态、按字段写设置、切换输出端口与 EQ 预设、管理设备里的 PEQ 预设。
+
+协议没有公开文档，是从 Topping Home 的 Web 前端 bundle 逆出来的，再在本机真机上逐字段验证
+（2026-11-08/09）。帧格式、命令号、字段映射见 `src/dx5ii/constants.py` 与 `src/dx5ii/protocol.py`
+的模块注释。
+
+## 中文
+
+### 安装
+
+```bash
+pip install -e .
+```
+
+只依赖 `hidapi`。设备插上、装好 Topping 驱动即可，不需要官方应用在跑。
+
+不安装也能用：
+
+```bash
+export PYTHONPATH=/path/to/dx5ii/src   # Windows PowerShell: $env:PYTHONPATH = '...\dx5ii\src'
+python -m dx5ii get
+```
+
+### 命令行
+
+```bash
+dx5ii                                   # 读全状态（含 EQ 预设列表）
+dx5ii --fast                            # 同上，跳过预设列表（省约 3 秒）
+dx5ii --json                            # 输出 JSON
+dx5ii --devices                         # 枚举 HID 接口，标出协议口
+dx5ii --set-output hp_balanced          # 只切输出端口，然后读回
+dx5ii --set-config IER-M7.Harman        # 只切 EQ 预设（名字或索引）
+dx5ii --set-output hp_balanced --set-config IER-M7.Harman
+```
+
+字段读写：
+
+```bash
+dx5ii get                               # 全部字段，按组打印
+dx5ii get output theme volume           # 只读指定字段
+dx5ii set brightness medium             # 写一个字段，打印 before -> after
+dx5ii set theme blue language en        # 一次写多个
+dx5ii raw 0x7137 --pt read              # 发一帧原始命令，打印回包
+dx5ii raw 0x710C --pt read --total 1    # 带 total/cur 的原始帧
+dx5ii watch 5                           # 监听 5 秒内设备主动推送的帧
+```
+
+可用字段共 43 个，`dx5ii --help` 会完整列出；分组如下：
+
+| 组 | 字段 |
+|---|---|
+| 电源与主机 | `power` `power-trigger` `home-page` `theme` `brightness` `language` `screen-timeout` `dim-screen-type` `trigger-out` |
+| 输入输出 | `input` `output` `input-option` `output-option` `input-mode` `spdif-mode` `headphone-gain` `balance` `polarity` |
+| 音频 | `volume` `mute` `pcm-filter` `line-mode` `uac` `volume-step` `vu-bar-mode` `vu-level` `dc-detect` `crossfeed-type` `crossfeed-conv` `crossfeed-simple` `bluetooth` `aptx` `remote` |
+| 记忆 | `volume-memory` `peq-memory` `crossfeed-memory` |
+| 按键 | `multifunction-key` `double-key` `remote-a-key` `remote-b-key` `remote-mute-mode` |
+| 设备 | `device-name`(仅读) `peq`(开关) |
+
+采样率不在字段表里：它由 `0x710F` 单独上报，出现在 `dx5ii` / `dx5ii get` 的全量输出的 `sampling` 段。
+
+`set` 支持的值形式：`on`/`off`、`true`/`false`、枚举名（如 `hp_balanced`、`aurora`）、
+索引数字、掩码列表（如 `input-option usb,bt`）、音量 `-40.0`、超时 `off`/`10s`/`30s`/`60s`。
+
+EQ 预设：
+
+```bash
+dx5ii configs                                    # 旧名，等价于 peq list
+dx5ii peq list                                   # 列出预设（当前激活项标 ←）
+dx5ii peq show IER-M7.Harman                     # 打印左右声道每段的频点/增益/Q
+dx5ii peq create MyPreset --copy IER-M7.Harman   # 复制一份新预设（默认不激活）
+dx5ii peq create MyPreset --from-apo delta.txt   # 从 Equalizer APO 的 Filter 行导入
+dx5ii peq create MyPreset --copy SPEAKER --activate
+dx5ii peq rename MyPreset Better                 # 改名
+dx5ii peq delete MyPreset --switch IER-M7.Harman # 删除，并把激活项切到指定预设
+```
+
+`peq create` / `peq delete` 只做新建与删除，**不提供修改已有预设每一段的手段**——设备协议里没有
+“改第 N 段”的单独命令，改一段就要整块重传，而重传等于覆盖，所以这里不做。
+
+退出码：`0` 成功，`2` 设备/参数错误，`3` 写入后回读没变。
+
+### 库用法
+
+```python
+from dx5ii import Dx5ii, apply_changes
+
+with Dx5ii() as dev:
+    state = dev.snapshot()                 # device/settings/sampling/peq/configs/pushed
+    print(state["settings"]["volume_db"])
+
+    dev.set_output("hp_balanced")          # 返回切换后的 settings
+    dev.set_config_index(2)                # 0x110E，返回回读到的索引
+
+with Dx5ii() as dev:                       # 一次切两样，拿到可回滚的 before
+    snap = dev.snapshot()
+    report = apply_changes(dev, snap, want_output="hp_balanced",
+                           want_config="IER-M7.Harman")
+    print(report["before"]["config_index"], report["after"]["config_index"])
+```
+
+PEQ：
+
+```python
+from dx5ii import Dx5ii, read_presets, create_preset, parse_apo_filters
+
+with Dx5ii() as dev:
+    presets = read_presets(dev)
+    print(presets["current_index"], [p["name"] for p in presets["presets"]])
+
+    left = parse_apo_filters(open("delta.txt").read())
+    create_preset(dev, "Imported", left)       # 只给左声道时右声道复制左侧
+```
+
+字段编码可以单独用：
+
+```python
+from dx5ii import encode_field
+
+frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
+# [(28034, 80, 1, 1)]  -> cmd, data, total, cur
+```
+
+### 协议要点
+
+- **帧**：16 字节 `22 33 <pt> <total> <cur> <cmdHi> <cmdLo> <data32 BE> <crcHi> <crcLo> 66 77 00`，
+  hidapi 写入时前置一个 `0x00` 报告号。`pt` = `0x10` 读请求 / `0x20` 写请求，设备回包一律 `0x20`。
+- **多帧**：`total` 是帧数，`cur` 是序号。`0x710C`（读设置）回 52 帧、`0x1120`（上传预设）回 393 帧，
+  必须收齐才算一次完整读——只读一帧会看起来“设备没反应”。
+- **EQ 预设块**：78 个 32 位字。`0..3` 名字（UTF-8，小端，NUL 填充）、`4` 启用以太、`5` 与 `7` 哈希、
+  `8..40` 左声道 11 段 × 3 字、`41..73` 右声道、`74..77` 填充。
+  每段：`packed = enabled | type<<8 | gain_tenth_db<<16`、`freq_hz`、`q*10000`；类型 `1=PK 4=LS 5=HS`。
+- **上传必须是 74 帧**，不是 78：设备只收前 74 字。按 78 发，设备完全不理。
+
+### 设计
+
+| 模块 | 职责 |
+|---|---|
+| `constants.py` | 命令号、枚举表、settings 字布局 |
+| `protocol.py` | 帧编解码、名字解码、音量换算 |
+| `device.py` | HID 句柄：打开、收发、读各命令、组装 snapshot |
+| `interpreter.py` | 帧序列 → 状态 dict（纯函数，可离线测） |
+| `fields.py` | 字段表、值编码、回读取值 |
+| `bands.py` | PEQ 段的编解码、APO 文本解析 |
+| `peq.py` | 预设的读/建/删/改名 |
+| `actions.py` | “切端口 + 切预设”的高层动作与回滚信息 |
+| `formatting.py` | 终端输出 |
+| `cli.py` | argparse 子命令与入口 |
+
+除 `device.py` 外都不碰硬件，可以直接用录下来的帧做单元测试。
+
+### 已知限制
+
+- **设备名不可写**。`0x7127` 只有读方向，固件没有接收名字的处理器。
+- **切 UAC 会重枚举**。改成 `uac1` 后 USB 描述符重建，后续写返回 `-1`。切完等约 3 秒、重新打开。
+- **10 个动作只能走 `raw`**：`factory-reset`、`disable-controller`、`call-c1/c2`、`execute-remote-a/b`、
+  `heartbeat`、`save-c1/c2`、`clear-pairing`。它们没有回读状态。
+- **切输出端口会连带改 EQ 和音量**。两者都按端口分别记忆，切回原端口即恢复。
+- **`0x1206` 只读**。切预设用 `0x110E`。
+
+### 测试
+
+```bash
+python -m unittest discover -s tests -t tests -v
+```
+
+53 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释），不需要设备。
+
+## English
+
+Python package and CLI for the Topping DX5 II (VID `0x152A` / PID `0x8750`, control protocol on
+HID `MI_02`): read every device setting, write individual fields, switch the output port and the EQ
+preset, and manage the PEQ presets stored on the device.
+
+The protocol has no public documentation. It was reverse engineered from the Topping Home web
+bundle and then verified field by field against real hardware (2026-11-08/09). Frame layout, command
+numbers and field maps live in the module docstrings of `src/dx5ii/constants.py` and
+`src/dx5ii/protocol.py`.
+
+### Install
+
+```bash
+pip install -e .
+```
+
+Only `hidapi` is required. Plug the device in and install Topping's driver; the official app does
+not need to be running.
+
+Without installing:
+
+```bash
+export PYTHONPATH=/path/to/dx5ii/src
+python -m dx5ii get
+```
+
+### CLI
+
+```bash
+dx5ii                                   # full state, including the preset list
+dx5ii --fast                            # same, skip presets (~3 s faster)
+dx5ii --json                            # JSON output
+dx5ii --devices                         # list HID interfaces, mark the protocol one
+dx5ii --set-output hp_balanced          # switch output only, then read back
+dx5ii --set-config IER-M7.Harman        # switch preset by name or index
+```
+
+Field access:
+
+```bash
+dx5ii get                               # every field, grouped
+dx5ii get output theme volume           # selected fields
+dx5ii set brightness medium             # write one field, print before -> after
+dx5ii set theme blue language en        # write several at once
+dx5ii raw 0x7137 --pt read              # raw frame, print the reply
+dx5ii watch 5                           # dump unsolicited frames for 5 s
+```
+
+There are 43 fields; `dx5ii --help` lists them all. Values accept `on`/`off`, `true`/`false`, enum
+names (`hp_balanced`, `aurora`), indices, mask lists (`input-option usb,bt`), volumes (`-40.0`) and
+timeouts (`off`/`10s`/`30s`/`60s`).
+
+PEQ presets:
+
+```bash
+dx5ii peq list                                   # presets, active one marked
+dx5ii peq show IER-M7.Harman                     # per-band freq/gain/Q, both channels
+dx5ii peq create MyPreset --copy IER-M7.Harman   # duplicate (not activated by default)
+dx5ii peq create MyPreset --from-apo delta.txt   # import Equalizer APO "Filter:" lines
+dx5ii peq create MyPreset --copy SPEAKER --activate
+dx5ii peq rename MyPreset Better
+dx5ii peq delete MyPreset --switch IER-M7.Harman
+```
+
+`peq create` and `peq delete` only ever add or remove a preset. **There is no way to edit a band of
+an existing preset**: the protocol has no per-band write command, and re-uploading the block
+overwrites it. That is deliberate.
+
+Exit codes: `0` OK, `2` device/argument error, `3` write not observed on read-back.
+
+### Library
+
+```python
+from dx5ii import Dx5ii, apply_changes
+
+with Dx5ii() as dev:
+    state = dev.snapshot()                 # device/settings/sampling/peq/configs/pushed
+    print(state["settings"]["volume_db"])
+    dev.set_output("hp_balanced")
+    dev.set_config_index(2)                # 0x110E
+
+with Dx5ii() as dev:
+    snap = dev.snapshot()
+    report = apply_changes(dev, snap, want_output="hp_balanced",
+                           want_config="IER-M7.Harman")
+    print(report["before"]["config_index"], report["after"]["config_index"])
+```
+
+```python
+from dx5ii import Dx5ii, read_presets, create_preset, parse_apo_filters
+
+with Dx5ii() as dev:
+    presets = read_presets(dev)
+    left = parse_apo_filters(open("delta.txt").read())
+    create_preset(dev, "Imported", left)
+```
+
+Every exported function and method carries type hints and ships `py.typed`.
+
+### Protocol notes
+
+- **Frame**: 16 bytes `22 33 <pt> <total> <cur> <cmdHi> <cmdLo> <data32 BE> <crcHi> <crcLo> 66 77 00`,
+  prefixed with a `0x00` report id when written through hidapi. `pt` is `0x10` for reads and `0x20`
+  for writes; replies always carry `0x20`.
+- **Multi-frame**: `total` is the frame count and `cur` the index. `0x710C` answers with 52 frames and
+  `0x1120` with 393; reading a single frame looks like "the device is not responding".
+- **PEQ block**: 78 uint32 words — `0..3` name (UTF-8, little-endian, NUL padded), `4` enabled,
+  `5` and `7` hashes, `8..40` left channel 11 bands × 3 words, `41..73` right channel, `74..77` padding.
+  Each band: `packed = enabled | type<<8 | gain_tenth_db<<16`, then `freq_hz`, then `q*10000`;
+  types are `1=PK 4=LS 5=HS`.
+- **Uploads must use 74 frames, not 78.** The device only consumes the first 74 words; sending 78 is
+  silently ignored.
+
+### Layout
+
+| Module | Responsibility |
+|---|---|
+| `constants.py` | command ids, enum tables, settings word layout |
+| `protocol.py` | frame codec, name decoding, volume conversion |
+| `device.py` | HID handle: open, send/receive, per-command reads, snapshot assembly |
+| `interpreter.py` | frame sequences → state dict (pure, testable offline) |
+| `fields.py` | field table, value encoding, read-back extraction |
+| `bands.py` | PEQ band codec, APO text parser |
+| `peq.py` | preset read/create/delete/rename |
+| `actions.py` | high-level "switch port + switch preset" with rollback info |
+| `formatting.py` | terminal output |
+| `cli.py` | argparse subcommands and entry point |
+
+Everything except `device.py` is hardware-free, so recorded frames are enough for unit tests.
+
+### Known limitations
+
+- **Device name is read-only.** `0x7127` has no receive handler in the firmware.
+- **Switching UAC re-enumerates the device.** After `uac1` the USB descriptors are rebuilt and the
+  next write returns `-1`; wait ~3 s and reopen.
+- **Ten actions only work through `raw`** (`factory-reset`, `disable-controller`, `call-c1/c2`,
+  `execute-remote-a/b`, `heartbeat`, `save-c1/c2`, `clear-pairing`) because they have no read-back.
+- **Switching the output port also changes EQ and volume.** Both are remembered per port.
+- **`0x1206` is read-only**; use `0x110E` to switch presets.
+
+### Tests
+
+```bash
+python -m unittest discover -s tests -t tests -v
+```
+
+53 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+interpretation). No device needed.
+
+## License
+
+TBD.
