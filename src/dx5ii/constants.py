@@ -257,3 +257,14 @@ AUTO_SCREEN_TIMEOUT_RAW: Final = {0: "off", 10: "10s", 30: "30s", 60: "60s"}
 
 #: Minimum word count a ``getSettings`` reply must carry to be interpreted.
 SETTINGS_MIN_WORDS: Final = 45
+
+#: Commands that change the device in ways the CLI cannot undo.
+#:
+#: ``firmwareUpdate`` puts the unit into flash mode and it stays there until a
+#: firmware image is written; there is no command that brings it back.  A
+#: factory reset wipes every user setting and preset.  ``raw`` refuses these
+#: unless ``--force`` is given.
+DESTRUCTIVE_COMMANDS: Final = {
+    0x710B: "factory reset (erases all settings and presets)",
+    0x712E: "firmware update mode (device leaves USB until reflashed)",
+}

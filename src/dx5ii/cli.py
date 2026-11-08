@@ -21,7 +21,12 @@ from typing import Any, Optional, Sequence
 
 from .actions import apply_changes, state_summary
 from .bands import Band, parse_apo_filters
-from .constants import CMD_SWITCH_MCU_CONFIG, PT_READ, PT_WRITE
+from .constants import (
+    CMD_SWITCH_MCU_CONFIG,
+    DESTRUCTIVE_COMMANDS,
+    PT_READ,
+    PT_WRITE,
+)
 from .device import Dx5ii, list_interfaces
 from .errors import Dx5iiError
 from .fields import FIELD_ACTIONS, FIELD_SPECS, encode_field, field_state
@@ -99,6 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_raw.add_argument("--total", type=lambda s: int(s, 0), default=1)
     p_raw.add_argument("--cur", type=lambda s: int(s, 0), default=1)
     p_raw.add_argument("--path")
+    p_raw.add_argument("--force", action="store_true",
+                       help="allow commands that cannot be undone "
+                            "(factory reset, firmware update mode)")
 
     p_watch = sub.add_parser("watch", help="stream frames the device pushes")
     p_watch.add_argument("seconds", nargs="?", type=int, default=3)
@@ -225,6 +233,13 @@ def _cmd_set(path: Optional[str], pairs: Sequence[str], as_json: bool) -> int:
 def _cmd_raw(path: Optional[str], args: argparse.Namespace) -> int:
     cmd = int(args.cmd, 0)
     data = int(args.data, 0) if args.data else 0
+
+    danger = DESTRUCTIVE_COMMANDS.get(cmd)
+    if danger and not args.force:
+        print("refusing 0x%04X: %s.\nPass --force if you really mean it."
+              % (cmd, danger), file=sys.stderr)
+        return 2
+
     protocol = PT_READ if args.pt == "read" else PT_WRITE
     with _open(path) as dev:
         dev.send(cmd, data, protocol, args.total, args.cur)

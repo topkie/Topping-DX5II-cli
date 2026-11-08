@@ -174,6 +174,9 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
   `execute-remote-a/b`, `heartbeat`, `save-c1/c2`, `clear-pairing`) because they have no read-back.
 - **Switching the output port also changes EQ and volume.** Both are remembered per port.
 - **`0x1206` is read-only**; use `0x110E` to switch presets.
+- **`raw` refuses two commands**: `0x710B` (factory reset) and `0x712E` (firmware update mode).
+  The second one drops the device off USB and it does not come back until a firmware image is
+  written. Pass `--force` only when that is what you want.
 
 ## Tests
 
