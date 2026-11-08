@@ -134,3 +134,20 @@ def db_to_volume(db: float, step: str) -> int:
 def mask_to_items(mask: int, table: Sequence[str]) -> list[str]:
     """Expand a bitmask into the names of the bits that are set."""
     return [item for i, item in enumerate(table) if (mask >> i) & 1]
+
+
+def format_firmware(release_number: Optional[int]) -> Optional[str]:
+    """Render the USB ``bcdDevice`` value as a dotted firmware version.
+
+    ``bcdDevice`` is binary-coded decimal: ``0x0258`` is 2.58, not 2.88.  The
+    device reports the same value in settings words 45/46.  ``None`` is passed
+    through because hidapi does not always expose the descriptor field.
+    """
+    if release_number is None:
+        return None
+    value = int(release_number)
+    major = (value >> 8) & 0xFF
+    minor = value & 0xFF
+    major_dec = (major >> 4) * 10 + (major & 0xF)
+    minor_dec = (minor >> 4) * 10 + (minor & 0xF)
+    return "%d.%02d" % (major_dec, minor_dec)

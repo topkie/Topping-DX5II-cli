@@ -7,7 +7,7 @@ HID `MI_02`): read every device setting, write individual fields, switch the out
 preset, and manage the PEQ presets stored on the device.
 
 The protocol has no public documentation. It was reverse engineered from the Topping Home web
-bundle and then verified field by field against real hardware (2026-11-08/09). Frame layout, command
+bundle and then verified field by field on a device running firmware 2.58. Frame layout, command
 numbers and field maps live in the module docstrings of `src/dx5ii/constants.py` and
 `src/dx5ii/protocol.py`.
 
@@ -17,8 +17,8 @@ numbers and field maps live in the module docstrings of `src/dx5ii/constants.py`
 pip install -e .
 ```
 
-Only `hidapi` is required. Plug the device in and install Topping's driver; the official app does
-not need to be running.
+Only `hidapi` is required — the device just has to be reachable from Topping Home. The official app
+itself does not need to be running.
 
 Without installing:
 
@@ -33,11 +33,14 @@ python -m dx5ii get
 dx5ii                                   # full state, including the preset list
 dx5ii --fast                            # same, skip presets (~3 s faster)
 dx5ii --json                            # JSON output
-dx5ii --devices                         # list HID interfaces, mark the protocol one
+dx5ii --devices                         # list HID interfaces (+ firmware), mark the protocol one
 dx5ii --set-output hp_balanced          # switch output only, then read back
 dx5ii --set-config IER-M7.Harman        # switch preset by name or index
 dx5ii --set-output hp_balanced --set-config IER-M7.Harman
 ```
+
+The first line of `dx5ii` output carries the device's firmware version, read from the USB
+`bcdDevice` descriptor (`release_number` in JSON), e.g. `firmware=2.58`.
 
 Field access:
 

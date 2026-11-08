@@ -56,7 +56,7 @@ from .peq import (
     read_presets,
     rename_preset,
 )
-from .protocol import Frame, build_frame, db_to_volume, decode_name, mask_to_items, parse_frame, volume_to_db
+from .protocol import Frame, build_frame, db_to_volume, decode_name, format_firmware, mask_to_items, parse_frame, volume_to_db
 
 __version__ = "1.0.0"
 
@@ -99,6 +99,7 @@ __all__ = [
     "parse_frame",
     "decode_name",
     "volume_to_db",
+    "format_firmware",
     "db_to_volume",
     "mask_to_items",
     # interpreters

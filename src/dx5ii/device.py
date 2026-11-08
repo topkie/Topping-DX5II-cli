@@ -39,7 +39,7 @@ from .interpreter import (
     interpret_sampling,
     interpret_settings,
 )
-from .protocol import Frame, build_frame, parse_frame
+from .protocol import Frame, build_frame, format_firmware, parse_frame
 
 
 def list_interfaces() -> list[dict[str, Any]]:
@@ -247,6 +247,8 @@ class Dx5ii:
                 "serial": self.info.get("serial"),
                 "interface_number": self.info.get("interface_number"),
                 "path": self.info.get("path"),
+                "release_number": self.info.get("release_number"),
+                "firmware": format_firmware(self.info.get("release_number")),
             },
             "settings": None,
             "sampling": None,

@@ -96,5 +96,21 @@ class NameAndMaskTests(unittest.TestCase):
         self.assertEqual(mask_to_items(0, INPUTS), [])
 
 
+class FirmwareFormatTests(unittest.TestCase):
+    def test_bcd_is_not_hex(self) -> None:
+        # bcdDevice 0x0258 is 2.58; reading it as hex would print 2.88.
+        from dx5ii.protocol import format_firmware
+
+        self.assertEqual(format_firmware(0x0258), "2.58")
+        self.assertEqual(format_firmware(600), "2.58")
+
+    def test_other_values(self) -> None:
+        from dx5ii.protocol import format_firmware
+
+        self.assertEqual(format_firmware(0x0100), "1.00")
+        self.assertEqual(format_firmware(0x0312), "3.12")
+        self.assertIsNone(format_firmware(None))
+
+
 if __name__ == "__main__":
     unittest.main()

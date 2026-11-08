@@ -33,6 +33,7 @@ from .peq import (
     read_presets,
     rename_preset,
 )
+from .protocol import format_firmware
 
 
 def _open(path: Optional[str] = None) -> Dx5ii:
@@ -539,9 +540,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         else:
             for item in printable:
                 marker = " <- protocol" if item["interface_number"] == 2 else ""
-                print("iface %-2s usage_page=%-3s usage=%-2s %s%s"
+                print("iface %-2s usage_page=%-3s usage=%-2s %s  firmware=%s%s"
                       % (item["interface_number"], item["usage_page"],
-                         item["usage"], item["product"], marker))
+                         item["usage"], item["product"],
+                         format_firmware(item.get("release_number")),
+                         marker))
         return 0
 
     return _read_snapshot(args)

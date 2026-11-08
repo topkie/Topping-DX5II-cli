@@ -5,9 +5,8 @@
 控制 Topping DX5 II（VID `0x152A` / PID `0x8750`，控制协议走 HID `MI_02`）的 Python 包与命令行工具：
 读全部设备状态、按字段写设置、切换输出端口与 EQ 预设、管理设备里的 PEQ 预设。
 
-协议没有公开文档，是从 Topping Home 的 Web 前端 bundle 逆出来的，再在本机真机上逐字段验证
-（2026-11-08/09）。帧格式、命令号、字段映射见 `src/dx5ii/constants.py` 与 `src/dx5ii/protocol.py`
-的模块注释。
+协议没有公开文档，是从 Topping Home 的 Web 前端 bundle 逆出来的，再在固件 2.58 的实机上逐字段验证。
+帧格式、命令号、字段映射见 `src/dx5ii/constants.py` 与 `src/dx5ii/protocol.py` 的模块注释。
 
 ## 安装
 
@@ -15,7 +14,7 @@
 pip install -e .
 ```
 
-只依赖 `hidapi`。设备插上、装好 Topping 驱动即可，不需要官方应用在跑。
+只依赖 `hidapi`。只要 Topping Home 能连接上设备即可，不需要官方应用在跑。
 
 不安装也能用：
 
@@ -30,11 +29,14 @@ python -m dx5ii get
 dx5ii                                   # 读全状态（含 EQ 预设列表）
 dx5ii --fast                            # 同上，跳过预设列表（省约 3 秒）
 dx5ii --json                            # 输出 JSON
-dx5ii --devices                         # 枚举 HID 接口，标出协议口
+dx5ii --devices                         # 枚举 HID 接口（含固件版本），标出协议口
 dx5ii --set-output hp_balanced          # 只切输出端口，然后读回
 dx5ii --set-config IER-M7.Harman        # 只切 EQ 预设（名字或索引）
 dx5ii --set-output hp_balanced --set-config IER-M7.Harman
 ```
+
+`dx5ii` 输出的第一行带设备固件版本，取自 USB `bcdDevice` 描述符（JSON 里的 `release_number`），
+形如 `firmware=2.58`。
 
 字段读写：
 

@@ -50,9 +50,9 @@ def _print_rows(title: str, rows: Iterable[tuple[str, Any]]) -> None:
 def print_snapshot(snap: dict[str, Any]) -> None:
     """Print a full snapshot in the same grouping ``dx5ii get`` uses."""
     device = snap.get("device") or {}
-    print("device   : %s  serial=%s  iface=%s"
+    print("device   : %s  serial=%s  iface=%s  firmware=%s"
           % (device.get("product"), device.get("serial"),
-             device.get("interface_number")))
+             device.get("interface_number"), device.get("firmware") or "?"))
 
     settings = snap.get("settings")
     if not settings:
