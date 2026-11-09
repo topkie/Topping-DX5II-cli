@@ -24,6 +24,7 @@ from .bands import Band, parse_apo_filters
 from .constants import (
     CMD_SWITCH_MCU_CONFIG,
     DESTRUCTIVE_COMMANDS,
+    PEQ_TEMP_MODES,
     PT_READ,
     PT_WRITE,
 )
@@ -287,6 +288,12 @@ def _cmd_configs(path: Optional[str], as_json: bool) -> int:
     print("current=%s (%s) count=%s"
           % (configs.get("current_index"), configs.get("current_name"),
              configs.get("count")))
+    source = configs.get("effective_source")
+    if source in PEQ_TEMP_MODES:
+        print("note: device is playing the %s config; slot %s (%s) is stored "
+              "but not audible"
+              % (source, configs.get("current_index"),
+                 configs.get("current_name")))
     for item in configs.get("configs") or []:
         mark = "<- active" if item.get("active") else ""
         print("  %d  %-20s %s" % (item["index"], item["name"], mark))

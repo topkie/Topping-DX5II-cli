@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from .constants import PEQ_TEMP_MODES
 from .device import Dx5ii
 from .errors import Dx5iiError
 from .fields import resolve_config, resolve_output
@@ -24,6 +25,7 @@ def state_summary(snap: dict[str, Any]) -> dict[str, Any]:
     index = configs.get("current_index")
     if index is None and preview.get("preview_active") is False:
         index = preview.get("local_index")
+    mode = preview.get("mode")
     return {
         "output": settings.get("output"),
         "output_raw": settings.get("output_raw"),
@@ -32,6 +34,9 @@ def state_summary(snap: dict[str, Any]) -> dict[str, Any]:
         "config_index": index,
         "config_name": configs.get("current_name"),
         "preview_active": preview.get("preview_active"),
+        "preview_mode": mode,
+        "config_effective": (
+            None if mode is None else mode not in PEQ_TEMP_MODES),
     }
 
 

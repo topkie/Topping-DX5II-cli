@@ -34,6 +34,7 @@ from .constants import (
 from .errors import Dx5iiError
 from .fields import resolve_output
 from .interpreter import (
+    apply_preview_mode,
     collect_words,
     interpret_config_upload,
     interpret_peq_preview,
@@ -286,7 +287,8 @@ class Dx5ii:
                     if 0 <= value < len(REMOTE_MUTE_MODES) else value)
 
         if include_configs:
-            result["configs"] = interpret_config_upload(self.read_config_upload())
+            result["configs"] = apply_preview_mode(
+                interpret_config_upload(self.read_config_upload()), result["peq"])
 
         if keep_raw:
             result["raw_frames"] = self.raw_frames
