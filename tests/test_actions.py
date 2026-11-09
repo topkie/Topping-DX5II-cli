@@ -73,6 +73,31 @@ class StateSummaryTests(unittest.TestCase):
     def test_snapshot_without_a_preview_reply_is_unknown(self) -> None:
         self.assertEqual(state_summary({})["playing_source"], "unknown")
 
+    def test_slots_can_be_omitted_instead_of_reported_as_none(self) -> None:
+        # `dx5ii set` reads settings only: the slot name lives in the 0x1120
+        # upload it skipped, so it asks for the keys to be left out.
+        snap = {
+            "settings": {"output": "hp_single"},
+            "peq": {"meta": 0x00000200, "preview_active": False, "source": 0,
+                    "source_name": "none", "local_index": 3,
+                    "source_id_hash": 0, "config_hash": 0},
+        }
+        summary = state_summary(snap, include_slots=False)
+        self.assertNotIn("stored_index", summary)
+        self.assertNotIn("stored_name", summary)
+        self.assertNotIn("playing_slot_name", summary)
+        self.assertEqual(summary["playing_slot_index"], 3)
+        self.assertEqual(summary["output"], "hp_single")
+
+    def test_slots_are_reported_by_default(self) -> None:
+        summary = state_summary({"settings": {}, "configs": {
+            "stored_index": 2, "stored_name": "IER-M7.Harman",
+            "playing": {"source": "local", "slot_index": 2,
+                        "slot_name": "IER-M7.Harman"}}})
+        self.assertEqual(summary["stored_index"], 2)
+        self.assertEqual(summary["stored_name"], "IER-M7.Harman")
+        self.assertEqual(summary["playing_slot_name"], "IER-M7.Harman")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -32,12 +32,20 @@ def needs_config_write(before: dict[str, Any], target: int) -> bool:
     return before.get("playing_source") != "local"
 
 
-def state_summary(snap: dict[str, Any]) -> dict[str, Any]:
+def state_summary(
+    snap: dict[str, Any], include_slots: bool = True
+) -> dict[str, Any]:
     """Condense a snapshot to the values a caller cares about.
 
     ``stored_*`` is the slot the device keeps selected; ``playing_*`` is what
     it is audible on.  They differ while Topping Home plays a cloud config:
     the slot is stored, the cloud config is what you hear.
+
+    ``include_slots=False`` drops ``stored_index``, ``stored_name`` and
+    ``playing_slot_name`` instead of reporting ``None``.  A snapshot read
+    without the preset list cannot know them -- the slot name only exists in
+    the ``0x1120`` upload -- and a caller that skipped that read should say so
+    by omission rather than imply the device reported nothing.
     """
     settings = snap.get("settings") or {}
     configs = snap.get("configs") or {}
@@ -46,17 +54,20 @@ def state_summary(snap: dict[str, Any]) -> dict[str, Any]:
         # A snapshot read without the preset list still knows what is audible;
         # the slot name is missing, which is honest rather than invented.
         playing = resolve_playing(configs, snap.get("peq"))
-    return {
+    summary: dict[str, Any] = {
         "output": settings.get("output"),
         "output_raw": settings.get("output_raw"),
         "input": settings.get("input"),
         "input_raw": settings.get("input_raw"),
-        "stored_index": configs.get("stored_index"),
-        "stored_name": configs.get("stored_name"),
-        "playing_source": playing.get("source"),
-        "playing_slot_index": playing.get("slot_index"),
-        "playing_slot_name": playing.get("slot_name"),
     }
+    if include_slots:
+        summary["stored_index"] = configs.get("stored_index")
+        summary["stored_name"] = configs.get("stored_name")
+    summary["playing_source"] = playing.get("source")
+    summary["playing_slot_index"] = playing.get("slot_index")
+    if include_slots:
+        summary["playing_slot_name"] = playing.get("slot_name")
+    return summary
 
 
 def apply_changes(

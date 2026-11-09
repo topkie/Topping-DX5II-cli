@@ -232,8 +232,8 @@ def _cmd_set(path: Optional[str], pairs: Sequence[str], as_json: bool) -> int:
     report = {
         "ok": ok,
         "actions": results,
-        "before": state_summary(before),
-        "after": state_summary(after),
+        "before": state_summary(before, include_slots=False),
+        "after": state_summary(after, include_slots=False),
     }
     if as_json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
