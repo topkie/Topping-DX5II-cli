@@ -209,13 +209,6 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 - **`raw` refuses two commands**: `0x710B` (factory reset) and `0x712E` (firmware update mode).
   The second one drops the device off USB and it does not come back until a firmware image is
   written. Pass `--force` only when that is what you want.
-- **Cloud PEQ configs are not readable.** When Topping Home plays a cloud config, the device only
-  reports a `source` byte (`1`) plus two hash words in `0x7137`; it does not expose the cloud
-  config's name, bands or gains. The local preset list, `0x1206` and all 52 settings words stay
-  unchanged, and `configs.current_name` still names the local slot. `dx5ii` now reports
-  `peq.mode` and `configs.effective_source` / `configs.current_effective` so the two cases are
-  distinguishable, and prints a note when a temporary (cloud or audition) config is active.
-  The detailed protocol notes live in `eq-agent/notes/cloud-peq-state.md`.
 
 ## Tests
 
@@ -223,8 +216,8 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-61 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
-interpretation, cloud/local preview modes). No device needed.
+55 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+interpretation). No device needed.
 
 ## License
 

@@ -192,11 +192,6 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 - **`0x1206` 只读**。切预设用 `0x110E`。
 - **`raw` 会拒绝两个命令**：`0x710B`（恢复出厂）与 `0x712E`（固件更新模式）。后者会让设备直接离开
   USB，只有重新刷写固件才能恢复。确需发送时加 `--force`。
-- **云端 PEQ 配置不可读**。Topping Home 在放云端配置时，设备只通过 `0x7137` 上报一个 `source`
-  字节（值为 `1`）和两个哈希字，不提供云端配置的名字、段数与增益；本地预设列表、`0x1206` 和
-  52 个设置字在这期间都**不变**，`configs.current_name` 指的仍是本地槽位。`dx5ii` 现在输出
-  `peq.mode` 与 `configs.effective_source` / `configs.current_effective` 用来区分这两种情况，
-  并在云端/试听配置生效时打印提示。协议细节见 `eq-agent/notes/cloud-peq-state.md`。
 
 ## 测试
 
@@ -204,7 +199,7 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 python -m unittest discover -s tests -t tests -v
 ```
 
-61 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地预览模式），不需要设备。
+55 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释），不需要设备。
 
 ## 许可证
 

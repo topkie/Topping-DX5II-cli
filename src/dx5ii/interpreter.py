@@ -18,8 +18,6 @@ from .constants import (
     DEVICE_NAME_WORDS,
     INPUTS,
     OUTPUTS,
-    PEQ_PREVIEW_SOURCES,
-    PEQ_TEMP_MODES,
     SAMPLE_RATES,
     SETTINGS_LAYOUT,
     SETTINGS_MIN_WORDS,
@@ -147,11 +145,6 @@ def interpret_peq_preview(frames: Iterable[Frame]) -> Optional[dict[str, Any]]:
 
     ``meta`` packs three bytes: ``active`` in bits 24..31, ``source`` in
     16..23 and ``localIndexBeforePreview`` in 8..15 (255 means "none").
-
-    ``mode`` is the state that is actually audible: ``off`` when no preview is
-    active, ``cloud``/``audition`` for the two temporary sources, and ``local``
-    for anything else (including an unknown source byte, which is also kept
-    verbatim in ``source_name`` as ``code=N``).
     """
     words: dict[int, int] = {}
     for frame in frames:
@@ -163,43 +156,15 @@ def interpret_peq_preview(frames: Iterable[Frame]) -> Optional[dict[str, Any]]:
     active = (meta >> 24) & 0xFF
     source = (meta >> 16) & 0xFF
     local_index = (meta >> 8) & 0xFF
-    source_name = PEQ_PREVIEW_SOURCES.get(source, f"code={source}")
-    if not active:
-        mode = "off"
-    elif source_name in PEQ_TEMP_MODES:
-        mode = source_name
-    else:
-        mode = "local"
     return {
         "meta": meta,
         "preview_active": bool(active),
         "source": source,
-        "source_name": source_name,
-        "mode": mode,
+        "source_name": "none" if source == 0 else f"code={source}",
         "local_index": None if local_index == 255 else local_index,
         "source_id_hash": words[1],
         "config_hash": words[2],
     }
-
-
-def apply_preview_mode(
-    configs: dict[str, Any], preview: Optional[dict[str, Any]]
-) -> dict[str, Any]:
-    """Mark which EQ source is audible in a decoded preset list.
-
-    ``0x1206`` and the preset upload always describe the device's *local*
-    slots.  While a cloud or audition preview is active the reported current
-    slot is therefore not what the unit plays: ``effective_source`` names the
-    real source and ``current_effective`` says whether ``current_index`` is
-    audible.  The device exposes no name for a temporary config, only the
-    ``source_id_hash``/``config_hash`` pair.
-    """
-    if preview is None:
-        return configs
-    mode = preview.get("mode", "local")
-    configs["effective_source"] = mode
-    configs["current_effective"] = mode not in PEQ_TEMP_MODES
-    return configs
 
 
 def _collect_config_blocks(
@@ -291,7 +256,6 @@ __all__ = [
     "interpret_settings",
     "interpret_sampling",
     "interpret_peq_preview",
-    "apply_preview_mode",
     "interpret_config_upload",
     "interpret_config_blocks",
 ]

@@ -258,17 +258,6 @@ AUTO_SCREEN_TIMEOUT_RAW: Final = {0: "off", 10: "10s", 30: "30s", 60: "60s"}
 #: Minimum word count a ``getSettings`` reply must carry to be interpreted.
 SETTINGS_MIN_WORDS: Final = 45
 
-#: ``peqPreviewState`` source byte -> the configuration actually playing.
-#:
-#: Topping Home calls these ``none``/``cloud``/``audition``.  ``cloud`` is an
-#: account config pushed by the web page, ``audition`` its in-memory preview;
-#: neither replaces the local slot reported by ``0x1206``.  The byte is zero
-#: while no preview is active.
-PEQ_PREVIEW_SOURCES: Final = {0: "none", 1: "cloud", 2: "audition"}
-
-#: Preview modes whose config is not one of the device's own preset slots.
-PEQ_TEMP_MODES: Final = ("cloud", "audition")
-
 #: Commands that change the device in ways the CLI cannot undo.
 #:
 #: ``firmwareUpdate`` puts the unit into flash mode and it stays there until a

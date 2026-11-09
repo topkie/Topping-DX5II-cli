@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Sequence
 
-from .constants import PEQ_TEMP_MODES, REMOTE_MUTE_MODES
+from .constants import REMOTE_MUTE_MODES
 
 #: Fields whose boolean means something more specific than yes/no.
 BOOL_TEXT: dict[str, dict[bool, str]] = {
@@ -95,7 +95,6 @@ def print_snapshot(snap: dict[str, Any]) -> None:
     if preview:
         _print_rows("peq preview", [
             ("preview_active", preview.get("preview_active")),
-            ("mode", preview.get("mode")),
             ("source_name", preview.get("source_name")),
             ("local_index", preview.get("local_index")),
             ("source_id_hash", preview.get("source_id_hash")),
@@ -107,12 +106,6 @@ def print_snapshot(snap: dict[str, Any]) -> None:
         print("[eq configs] current=%s (%s) count=%s"
               % (configs.get("current_index"), configs.get("current_name"),
                  configs.get("count")))
-        source = configs.get("effective_source")
-        if source in PEQ_TEMP_MODES:
-            print("  note: the device is playing the %s config; slot %s "
-                  "(%s) is stored but not audible"
-                  % (source, configs.get("current_index"),
-                     configs.get("current_name")))
         for item in configs.get("configs") or []:
             mark = "  <-- active" if item.get("active") else ""
             print("  %d  %-18s%s" % (item["index"], item["name"], mark))
@@ -120,28 +113,20 @@ def print_snapshot(snap: dict[str, Any]) -> None:
         print("[eq configs] skipped")
 
 
-def _config_suffix(block: dict[str, Any]) -> str:
-    """Flag a summary whose preset slot is masked by a temporary preview."""
-    mode = block.get("preview_mode")
-    if mode in PEQ_TEMP_MODES:
-        return ", effective %s" % mode
-    return ""
-
-
 def print_switch_report(report: dict[str, Any]) -> None:
     """Print the result of :func:`dx5ii.actions.apply_changes`."""
     before = report.get("before") or {}
     after = report.get("after") or {}
-    print("before   : output=%s  config=%s (%s%s)"
+    print("before   : output=%s  config=%s (%s)"
           % (before.get("output"), before.get("config_index"),
-             before.get("config_name"), _config_suffix(before)))
+             before.get("config_name")))
     for action in report.get("actions") or []:
         print("  %-6s %s -> %s  (%s)"
               % (action["what"], action["from"], action["to"],
                  "changed" if action["changed"] else "already set"))
-    print("after    : output=%s  config=%s (%s%s)"
+    print("after    : output=%s  config=%s (%s)"
           % (after.get("output"), after.get("config_index"),
-             after.get("config_name"), _config_suffix(after)))
+             after.get("config_name")))
     for error in report.get("errors") or []:
         print(f"error    : {error}")
 
