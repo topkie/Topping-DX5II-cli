@@ -108,6 +108,12 @@ dx5ii raw 0x710C --pt read --total 1    # raw frame with explicit total/cur
 dx5ii watch 5                           # dump unsolicited frames for 5 s
 ```
 
+`raw` prints the frames the device sends back: each line decodes `cmd`, `pt`, `total`, `cur`
+and `data`, but nothing is interpreted into named fields and no scaling is applied. A `0x710C`
+reply is 52 lines and `0x7137` is three, one 32-bit word each; `data` is shown in both decimal
+and hex. When you send a multi-frame command yourself, set `--total` and `--cur`, because the
+device only accepts consecutive frame numbers.
+
 There are 43 fields; `dx5ii --help` lists them all. Grouped:
 
 | Group | Fields |
