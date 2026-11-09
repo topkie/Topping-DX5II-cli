@@ -74,6 +74,28 @@ The first line of `dx5ii` output carries the device's firmware version, read fro
 (`output_option_mask`), and booleans stay booleans. Scripts that prefer numbers read the `*_raw`
 key; nothing has to be parsed out of a display string.
 
+`--set-config` also ends a Topping Home cloud preview. While a cloud config is playing, the
+device keeps its stored slot, so an index that already matches the stored slot still needs the
+switch — that write is what returns the device to a local preset:
+
+```
+before   : output=hp_balanced  stored=2 (IER-M7.Harman)  playing=cloud
+  config 2 -> 2  (left cloud preview)
+after    : output=hp_balanced  stored=2 (IER-M7.Harman)  playing=local
+```
+
+Three rules for scripts:
+
+- `changed` means the device state really changed. Leaving a preview counts, so `changed` is
+  `true` even when `from == to`; what changed is `playing`, not `stored`.
+- `left_preview` appears on the action only when a preview was ended; its value is `"cloud"` or
+  `"audition"`. Ordinary switches do not carry the key.
+- The top-level `changed` follows the same rule, and `ok` still means "the value read back after
+  the switch equals the target".
+
+Skipping is only safe when the device both stores the target and plays a local slot. If
+`0x7137` does not answer, `playing_source` is `"unknown"` and the switch is sent anyway.
+
 Field access:
 
 ```bash

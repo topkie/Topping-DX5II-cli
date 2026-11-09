@@ -65,6 +65,25 @@ dx5ii --set-output hp_balanced --set-config Dynamic
 选项名字数组的掩码在 settings 块里（`output_option_mask`），布尔字段保持布尔。偏好数字的脚本读
 `*_raw` 键即可，不需要从显示字符串里反解析。
 
+`--set-config` 也能结束 Topping Home 的云端预览。云端配置在放时设备仍保留自己的存储槽位，所以
+「索引与存储槽相同」并不代表它可听——命令照样会发，正是这一发把设备切回本地预设：
+
+```
+before   : output=hp_balanced  stored=2 (IER-M7.Harman)  playing=cloud
+  config 2 -> 2  (left cloud preview)
+after    : output=hp_balanced  stored=2 (IER-M7.Harman)  playing=local
+```
+
+脚本要注意三条：
+
+- `changed` 表示设备状态确实变了。退出预览也算变化，所以即使 `from == to`，`changed` 也是
+  `true`；变的是 `playing`，不是 `stored`。
+- `left_preview` 只在结束预览时出现在 action 里，值为 `"cloud"` 或 `"audition"`；普通切槽没有这个键。
+- 顶层 `changed` 遵循同一规则；`ok` 仍表示「切完后读回的值等于目标」。
+
+只有「存储的是它、而且确实在放本地槽」时才跳过写。`0x7137` 没有回包时 `playing_source` 是
+`"unknown"`，这时照样发命令。
+
 字段读写：
 
 ```bash

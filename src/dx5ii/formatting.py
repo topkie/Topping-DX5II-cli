@@ -163,9 +163,14 @@ def print_switch_report(report: dict[str, Any]) -> None:
     after = report.get("after") or {}
     print(_state_line("before   ", before))
     for action in report.get("actions") or []:
+        if action.get("left_preview"):
+            note = "left %s preview" % action["left_preview"]
+        elif action["changed"]:
+            note = "changed"
+        else:
+            note = "already set"
         print("  %-6s %s -> %s  (%s)"
-              % (action["what"], action["from"], action["to"],
-                 "changed" if action["changed"] else "already set"))
+              % (action["what"], action["from"], action["to"], note))
     print(_state_line("after    ", after))
     for error in report.get("errors") or []:
         print(f"error    : {error}")

@@ -60,5 +60,48 @@ class PrintConfigsTests(unittest.TestCase):
         self.assertIn("2  IER-M7.Harman       stored", lines[-1])
 
 
+def _report(actions, before_playing="cloud", after_playing="local"):
+    state = {"output": "hp_balanced", "stored_index": 2,
+             "stored_name": "IER-M7.Harman"}
+    return {
+        "ok": True,
+        "changed": True,
+        "before": {**state, "playing_source": before_playing},
+        "after": {**state, "playing_source": after_playing},
+        "actions": actions,
+        "errors": [],
+    }
+
+
+class PrintSwitchReportTests(unittest.TestCase):
+    def _render(self, report: dict) -> list[str]:
+        from dx5ii.formatting import print_switch_report
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            print_switch_report(report)
+        return buffer.getvalue().splitlines()
+
+    def test_leaving_a_cloud_preview_is_named(self) -> None:
+        lines = self._render(_report([{
+            "what": "config", "from": 2, "to": 2, "changed": True,
+            "observed": 2, "left_preview": "cloud"}]))
+        self.assertIn("  config 2 -> 2  (left cloud preview)", lines)
+        self.assertIn("playing=cloud", lines[0])
+        self.assertIn("playing=local", lines[-1])
+
+    def test_plain_switch_still_says_changed(self) -> None:
+        lines = self._render(_report([{
+            "what": "config", "from": 1, "to": 2, "changed": True, "observed": 2}],
+            before_playing="local"))
+        self.assertIn("  config 1 -> 2  (changed)", lines)
+
+    def test_idempotent_switch_says_already_set(self) -> None:
+        lines = self._render(_report([{
+            "what": "config", "from": 2, "to": 2, "changed": False}],
+            before_playing="local"))
+        self.assertIn("  config 2 -> 2  (already set)", lines)
+
+
 if __name__ == "__main__":
     unittest.main()

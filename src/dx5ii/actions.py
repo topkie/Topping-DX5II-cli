@@ -10,9 +10,26 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from .constants import PEQ_TEMP_MODES
 from .device import Dx5ii
 from .errors import Dx5iiError
 from .fields import resolve_config, resolve_output
+from .interpreter import resolve_playing
+
+
+def needs_config_write(before: dict[str, Any], target: int) -> bool:
+    """Whether ``0x110E`` has to be sent to make ``target`` the audible slot.
+
+    Skipping is only safe when the device both stores ``target`` and plays a
+    local slot.  While Topping Home plays a cloud or audition config the stored
+    slot is kept but silent, so an equal index still needs the switch: that
+    write is what ends the preview.  ``playing_source`` is ``"unknown"`` when
+    ``0x7137`` did not answer and ``None`` when the snapshot was taken without
+    the config block; both mean "cannot prove it is audible", so they write.
+    """
+    if before.get("stored_index") != target:
+        return True
+    return before.get("playing_source") != "local"
 
 
 def state_summary(snap: dict[str, Any]) -> dict[str, Any]:
@@ -24,7 +41,11 @@ def state_summary(snap: dict[str, Any]) -> dict[str, Any]:
     """
     settings = snap.get("settings") or {}
     configs = snap.get("configs") or {}
-    playing = configs.get("playing") or {}
+    playing = configs.get("playing")
+    if playing is None:
+        # A snapshot read without the preset list still knows what is audible;
+        # the slot name is missing, which is honest rather than invented.
+        playing = resolve_playing(configs, snap.get("peq"))
     return {
         "output": settings.get("output"),
         "output_raw": settings.get("output_raw"),
@@ -113,18 +134,22 @@ def apply_changes(
             start = before.get("stored_index")
             if start is None:
                 start = dev.current_config_index()
-            if start == target:
+            if not needs_config_write(before, target):
                 report["actions"].append({
                     "what": "config", "from": start, "to": target, "changed": False})
             else:
+                left_preview = before.get("playing_source")
                 got = dev.set_config_index(target)
                 ok = got == target
                 report["changed"] = report["changed"] or ok
                 report["ok"] = report["ok"] and ok
-                report["actions"].append({
-                    "what": "config", "from": start, "to": target, "changed": ok,
-                    "observed": got,
-                })
+                action = {"what": "config", "from": start, "to": target,
+                          "changed": ok, "observed": got}
+                if left_preview in PEQ_TEMP_MODES:
+                    # The slot did not move; what changed is that the device
+                    # stopped playing Topping Home's temporary config.
+                    action["left_preview"] = left_preview
+                report["actions"].append(action)
                 if not ok:
                     report["errors"].append(
                         f"config did not change to {target!r} (observed {got!r})")
@@ -138,6 +163,8 @@ def apply_changes(
             pass
     if summary["stored_index"] is not None:
         summary["stored_name"] = known.get(summary["stored_index"])
+    if summary["playing_slot_index"] is not None:
+        summary["playing_slot_name"] = known.get(summary["playing_slot_index"])
     report["after"] = summary
 
     if summary["output"] is None:
@@ -146,4 +173,4 @@ def apply_changes(
     return report
 
 
-__all__ = ["apply_changes", "state_summary"]
+__all__ = ["apply_changes", "state_summary", "needs_config_write"]
