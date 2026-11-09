@@ -18,6 +18,8 @@ from .constants import (
     DEVICE_NAME_WORDS,
     INPUTS,
     OUTPUTS,
+    PEQ_PREVIEW_SOURCES,
+    PEQ_TEMP_MODES,
     SAMPLE_RATES,
     SETTINGS_LAYOUT,
     SETTINGS_MIN_WORDS,
@@ -145,6 +147,11 @@ def interpret_peq_preview(frames: Iterable[Frame]) -> Optional[dict[str, Any]]:
 
     ``meta`` packs three bytes: ``active`` in bits 24..31, ``source`` in
     16..23 and ``localIndexBeforePreview`` in 8..15 (255 means "none").
+
+    ``source_name`` names the source the way Topping Home does
+    (``none``/``cloud``/``audition``); an unknown byte is kept verbatim as
+    ``code=N``.  These fields describe the *device* state only -- call
+    :func:`resolve_playing` to turn them into "what is audible".
     """
     words: dict[int, int] = {}
     for frame in frames:
@@ -160,11 +167,57 @@ def interpret_peq_preview(frames: Iterable[Frame]) -> Optional[dict[str, Any]]:
         "meta": meta,
         "preview_active": bool(active),
         "source": source,
-        "source_name": "none" if source == 0 else f"code={source}",
+        "source_name": PEQ_PREVIEW_SOURCES.get(source, f"code={source}"),
         "local_index": None if local_index == 255 else local_index,
         "source_id_hash": words[1],
         "config_hash": words[2],
     }
+
+
+def resolve_playing(
+    configs: dict[str, Any], preview: Optional[dict[str, Any]]
+) -> dict[str, Any]:
+    """Return what the device is audible on right now.
+
+    A cloud or audition config is pushed into the device without becoming a
+    preset slot: ``0x1206`` keeps reporting the stored slot, so the preset list
+    alone cannot tell the two situations apart.  The result has one meaning per
+    field:
+
+    * ``source`` -- ``local``, ``cloud``, ``audition`` or ``unknown``
+    * ``slot_index``/``slot_name`` -- set only for ``local``, null otherwise
+    * ``source_id_hash``/``config_hash`` -- the device's identifiers for a
+      temporary config; the device exposes no name for it.
+    """
+    if not preview:
+        return {
+            "source": "unknown",
+            "slot_index": None,
+            "slot_name": None,
+            "source_id_hash": None,
+            "config_hash": None,
+        }
+    hashes = {
+        "source_id_hash": preview.get("source_id_hash"),
+        "config_hash": preview.get("config_hash"),
+    }
+    if not preview.get("preview_active"):
+        index = configs.get("stored_index")
+        if index is None:
+            index = preview.get("local_index")
+        name = configs.get("stored_name")
+        if name is None and index is not None:
+            name = next(
+                (slot["name"] for slot in configs.get("slots") or []
+                 if slot["index"] == index),
+                None,
+            )
+        return {"source": "local", "slot_index": index, "slot_name": name,
+                **hashes}
+    source = preview.get("source_name")
+    if source not in PEQ_TEMP_MODES:
+        source = "unknown"
+    return {"source": source, "slot_index": None, "slot_name": None, **hashes}
 
 
 def _collect_config_blocks(
@@ -207,30 +260,34 @@ def interpret_config_upload(frames: Iterable[Frame]) -> dict[str, Any]:
     78-word ``0x1106`` block per preset.  Each block names itself in words
     0..3 (UTF-8, little-endian).  Band details are not included here; use
     :func:`interpret_config_blocks` for those.
-    """
-    current, blocks = _collect_config_blocks(frames)
 
-    configs = [
+    Everything here describes the device's **stored** slots: ``0x1206`` keeps
+    reporting one of them even while a cloud config plays.  Use
+    :func:`resolve_playing` to find out what is actually audible.
+    """
+    stored, blocks = _collect_config_blocks(frames)
+
+    slots = [
         {
             "index": i,
             "name": decode_name(words[0:4]),
             "hash": words[5],
-            "active": i == current,
+            "stored_current": i == stored,
         }
         for i, words in enumerate(blocks)
     ]
     return {
-        "current_index": current,
-        "current_name": next(
-            (c["name"] for c in configs if c["index"] == current), None),
-        "count": len(configs),
-        "configs": configs,
+        "stored_index": stored,
+        "stored_name": next(
+            (slot["name"] for slot in slots if slot["index"] == stored), None),
+        "count": len(slots),
+        "slots": slots,
     }
 
 
 def interpret_config_blocks(frames: Iterable[Frame]) -> dict[str, Any]:
     """Decode the same upload, keeping every preset's EQ bands."""
-    current, blocks = _collect_config_blocks(frames)
+    stored, blocks = _collect_config_blocks(frames)
 
     presets = []
     for i, words in enumerate(blocks):
@@ -240,12 +297,12 @@ def interpret_config_blocks(frames: Iterable[Frame]) -> dict[str, Any]:
             "name": block["name"],
             "hash": block["hash"],
             "enabled": block["enabled"],
-            "active": i == current,
+            "stored_current": i == stored,
             "bands_left": [b.as_dict() for b in block["bands_left"]],
             "bands_right": [b.as_dict() for b in block["bands_right"]],
         })
     return {
-        "current_index": current,
+        "stored_index": stored,
         "count": len(presets),
         "presets": presets,
     }
@@ -256,6 +313,7 @@ __all__ = [
     "interpret_settings",
     "interpret_sampling",
     "interpret_peq_preview",
+    "resolve_playing",
     "interpret_config_upload",
     "interpret_config_blocks",
 ]

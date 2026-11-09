@@ -106,8 +106,8 @@ lists (`input-option usb,bt`), volumes (`-40.0`) and timeouts (`off`/`10s`/`30s`
 ## PEQ presets
 
 ```bash
-dx5ii configs                                    # legacy alias for peq list
-dx5ii peq list                                   # presets, active one marked with ←
+dx5ii configs                                    # current source, stored slot and slots
+dx5ii peq list                                   # presets, stored one marked with ←
 dx5ii peq show Dynamic                           # per-band freq/gain/Q, both channels
 dx5ii peq create MyPreset --copy Dynamic         # duplicate (not activated by default)
 dx5ii peq create MyPreset --from-apo delta.txt   # import Equalizer APO "Filter:" lines
@@ -148,7 +148,7 @@ from dx5ii import Dx5ii, read_presets, create_preset, parse_apo_filters
 
 with Dx5ii() as dev:
     presets = read_presets(dev)
-    print(presets["current_index"], [p["name"] for p in presets["presets"]])
+    print(presets["stored_index"], [p["name"] for p in presets["presets"]])
 
     left = parse_apo_filters(open("delta.txt").read())
     create_preset(dev, "Imported", left)       # right channel copies the left one
@@ -209,6 +209,11 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 - **`raw` refuses two commands**: `0x710B` (factory reset) and `0x712E` (firmware update mode).
   The second one drops the device off USB and it does not come back until a firmware image is
   written. Pass `--force` only when that is what you want.
+- **A cloud config's name and bands are not readable.** While Topping Home plays a cloud config the
+  device reports only a `source` byte and two hashes through `0x7137`; `0x1206` keeps naming the
+  stored local slot. `configs.playing` says what is audible (`local` / `cloud` / `audition` /
+  `unknown`) and `configs.stored_index` / `stored_name` say what is stored, so the two cannot be
+  confused. `playing.slot_index` is null unless the device plays a local slot.
 
 ## Tests
 
@@ -216,7 +221,7 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-55 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+63 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
 interpretation). No device needed.
 
 ## License

@@ -39,6 +39,7 @@ from .interpreter import (
     interpret_peq_preview,
     interpret_sampling,
     interpret_settings,
+    resolve_playing,
 )
 from .protocol import Frame, build_frame, format_firmware, parse_frame
 
@@ -213,8 +214,10 @@ class Dx5ii:
         return self.current_config_index()
 
     def current_config_index(self) -> Optional[int]:
-        """Read the active EQ preset index.
+        """Read the stored EQ preset index.
 
+        This is the slot the device has selected, not necessarily what it is
+        playing: while a cloud config is active the slot is stored but silent.
         The cheap path asks ``peqPreviewState``; the expensive one uploads the
         preset list.  The preview is only trustworthy while no preview is
         active.
@@ -224,7 +227,7 @@ class Dx5ii:
                 and preview.get("local_index") is not None:
             return preview["local_index"]
         self.read_settings(1600)
-        return interpret_config_upload(self.read_config_upload(3000))["current_index"]
+        return interpret_config_upload(self.read_config_upload(3000))["stored_index"]
 
     # -- state assembly ----------------------------------------------------
 
@@ -286,7 +289,9 @@ class Dx5ii:
                     if 0 <= value < len(REMOTE_MUTE_MODES) else value)
 
         if include_configs:
-            result["configs"] = interpret_config_upload(self.read_config_upload())
+            configs = interpret_config_upload(self.read_config_upload())
+            result["configs"] = {"playing": resolve_playing(configs, result["peq"]),
+                                 **configs}
 
         if keep_raw:
             result["raw_frames"] = self.raw_frames

@@ -39,6 +39,45 @@ SNAPSHOT_GROUPS: list[tuple[str, Sequence[str]]] = [
 ]
 
 
+def _playing_text(playing: dict[str, Any]) -> str:
+    """Render "what is audible", independent of what the device has stored."""
+    source = playing.get("source")
+    if source == "local":
+        index = playing.get("slot_index")
+        if index is None:
+            return "local (slot unknown)"
+        return "local slot %s (%s)" % (index, playing.get("slot_name"))
+    if source in ("cloud", "audition"):
+        return "%s config (Unknown)" % source
+    return "unknown (no preview reply)"
+
+
+def _stored_text(configs: dict[str, Any]) -> str:
+    index = configs.get("stored_index")
+    if index is None:
+        return "unknown"
+    return "slot %s (%s)" % (index, configs.get("stored_name"))
+
+
+def print_configs(configs: dict[str, Any]) -> None:
+    """Print the EQ preset list with the audible source on its own line."""
+    playing = configs.get("playing") or {}
+    _print_rows("eq configs", [
+        ("playing", _playing_text(playing)),
+        ("stored", _stored_text(configs)),
+        ("count", configs.get("count")),
+    ])
+    for slot in configs.get("slots") or []:
+        if playing.get("source") == "local" \
+                and slot["index"] == playing.get("slot_index"):
+            mark = "  <-- playing"
+        elif slot.get("stored_current"):
+            mark = "  stored"
+        else:
+            mark = ""
+        print("  %d  %-18s%s" % (slot["index"], slot["name"], mark))
+
+
 def format_value(key: str, value: Any) -> str:
     """Render one field value for the console."""
     if isinstance(value, bool):
@@ -103,30 +142,31 @@ def print_snapshot(snap: dict[str, Any]) -> None:
 
     configs = snap.get("configs")
     if configs:
-        print("[eq configs] current=%s (%s) count=%s"
-              % (configs.get("current_index"), configs.get("current_name"),
-                 configs.get("count")))
-        for item in configs.get("configs") or []:
-            mark = "  <-- active" if item.get("active") else ""
-            print("  %d  %-18s%s" % (item["index"], item["name"], mark))
+        print_configs(configs)
     elif settings is not None:
         print("[eq configs] skipped")
+
+
+def _state_line(label: str, state: dict[str, Any]) -> str:
+    """Render one side of a switch report: port, stored slot and audible source."""
+    text = "output=%s  stored=%s (%s)" % (
+        state.get("output"), state.get("stored_index"), state.get("stored_name"))
+    source = state.get("playing_source")
+    if source:
+        text += "  playing=%s" % source
+    return "%s: %s" % (label, text)
 
 
 def print_switch_report(report: dict[str, Any]) -> None:
     """Print the result of :func:`dx5ii.actions.apply_changes`."""
     before = report.get("before") or {}
     after = report.get("after") or {}
-    print("before   : output=%s  config=%s (%s)"
-          % (before.get("output"), before.get("config_index"),
-             before.get("config_name")))
+    print(_state_line("before   ", before))
     for action in report.get("actions") or []:
         print("  %-6s %s -> %s  (%s)"
               % (action["what"], action["from"], action["to"],
                  "changed" if action["changed"] else "already set"))
-    print("after    : output=%s  config=%s (%s)"
-          % (after.get("output"), after.get("config_index"),
-             after.get("config_name")))
+    print(_state_line("after    ", after))
     for error in report.get("errors") or []:
         print(f"error    : {error}")
 
@@ -141,6 +181,7 @@ __all__ = [
     "BOOL_TEXT",
     "SNAPSHOT_GROUPS",
     "format_value",
+    "print_configs",
     "print_snapshot",
     "print_switch_report",
     "print_field_rows",

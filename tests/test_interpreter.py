@@ -140,11 +140,12 @@ class ConfigUploadTests(unittest.TestCase):
         frames += self._block([0x616E7944, 0x0063696D], 0)  # "Dynamic"
         out = interpret_config_upload(frames)
 
-        self.assertEqual(out["current_index"], 1)
+        self.assertEqual(out["stored_index"], 1)
         self.assertEqual(out["count"], 2)
-        self.assertEqual([c["name"] for c in out["configs"]], ["Warm", "Dynamic"])
-        self.assertEqual(out["current_name"], "Dynamic")
-        self.assertTrue(out["configs"][1]["active"])
+        self.assertEqual([c["name"] for c in out["slots"]], ["Warm", "Dynamic"])
+        self.assertEqual(out["stored_name"], "Dynamic")
+        self.assertTrue(out["slots"][1]["stored_current"])
+        self.assertNotIn("current_index", out)
 
     def test_one_based_indices(self) -> None:
         from dx5ii.interpreter import interpret_config_upload
@@ -152,8 +153,99 @@ class ConfigUploadTests(unittest.TestCase):
         frames = [frame(0x1206, 0)] + self._block([0x6D726157], 1)
         out = interpret_config_upload(frames)
         self.assertEqual(out["count"], 1)
-        self.assertEqual(out["configs"][0]["name"], "Warm")
-        self.assertEqual(out["current_name"], "Warm")
+        self.assertEqual(out["slots"][0]["name"], "Warm")
+        self.assertEqual(out["stored_name"], "Warm")
+
+
+class PeqSourceNameTests(unittest.TestCase):
+    """The source byte, named the way Topping Home names it."""
+
+    def _preview(self, source: int, active: int = 1, local: int = 2):
+        from dx5ii.interpreter import interpret_peq_preview
+
+        meta = (active << 24) | (source << 16) | (local << 8)
+        return interpret_peq_preview([
+            frame(0x7137, meta, total=3, index=0),
+            frame(0x7137, 0x8E5A278A, total=3, index=1),
+            frame(0x7137, 0xBF216A8E, total=3, index=2),
+        ])
+
+    def test_cloud_is_named(self) -> None:
+        out = self._preview(1)
+        assert out is not None
+        self.assertEqual(out["source_name"], "cloud")
+        self.assertTrue(out["preview_active"])
+
+    def test_audition_is_named(self) -> None:
+        out = self._preview(2)
+        assert out is not None
+        self.assertEqual(out["source_name"], "audition")
+
+    def test_unknown_source_stays_verbatim(self) -> None:
+        out = self._preview(7)
+        assert out is not None
+        self.assertEqual(out["source_name"], "code=7")
+
+
+class ResolvePlayingTests(unittest.TestCase):
+    """``playing`` must name what is audible, not what the device stored."""
+
+    def _configs(self) -> dict:
+        return {
+            "stored_index": 2,
+            "stored_name": "IER-M7.Harman",
+            "count": 1,
+            "slots": [{"index": 2, "name": "IER-M7.Harman", "stored_current": True}],
+        }
+
+    def _preview(self, active: bool, source_name: str) -> dict:
+        return {
+            "preview_active": active,
+            "source_name": source_name,
+            "local_index": 2,
+            "source_id_hash": 0x8E5A278A if active else 0,
+            "config_hash": 0xBF216A8E if active else 0,
+        }
+
+    def test_local_slot_is_playing(self) -> None:
+        from dx5ii.interpreter import resolve_playing
+
+        out = resolve_playing(self._configs(), self._preview(False, "none"))
+        self.assertEqual(out["source"], "local")
+        self.assertEqual(out["slot_index"], 2)
+        self.assertEqual(out["slot_name"], "IER-M7.Harman")
+
+    def test_cloud_masks_the_stored_slot(self) -> None:
+        from dx5ii.interpreter import resolve_playing
+
+        out = resolve_playing(self._configs(), self._preview(True, "cloud"))
+        self.assertEqual(out["source"], "cloud")
+        self.assertIsNone(out["slot_index"])
+        self.assertIsNone(out["slot_name"])
+        self.assertEqual(out["source_id_hash"], 0x8E5A278A)
+        self.assertEqual(out["config_hash"], 0xBF216A8E)
+
+    def test_audition_masks_the_stored_slot(self) -> None:
+        from dx5ii.interpreter import resolve_playing
+
+        out = resolve_playing(self._configs(), self._preview(True, "audition"))
+        self.assertEqual(out["source"], "audition")
+        self.assertIsNone(out["slot_index"])
+
+    def test_unknown_source_is_not_a_slot(self) -> None:
+        from dx5ii.interpreter import resolve_playing
+
+        out = resolve_playing(self._configs(), self._preview(True, "code=7"))
+        self.assertEqual(out["source"], "unknown")
+        self.assertIsNone(out["slot_index"])
+
+    def test_missing_preview_is_unknown(self) -> None:
+        from dx5ii.interpreter import resolve_playing
+
+        out = resolve_playing(self._configs(), None)
+        self.assertEqual(out["source"], "unknown")
+        self.assertIsNone(out["slot_index"])
+        self.assertIsNone(out["source_id_hash"])
 
 
 if __name__ == "__main__":

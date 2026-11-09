@@ -30,7 +30,12 @@ from .constants import (
 from .device import Dx5ii, list_interfaces
 from .errors import Dx5iiError
 from .fields import FIELD_ACTIONS, FIELD_SPECS, encode_field, field_raw, field_state
-from .formatting import print_field_rows, print_snapshot, print_switch_report
+from .formatting import (
+    print_configs,
+    print_field_rows,
+    print_snapshot,
+    print_switch_report,
+)
 from . import __version__
 from .peq import (
     create_preset,
@@ -284,12 +289,7 @@ def _cmd_configs(path: Optional[str], as_json: bool) -> int:
     if as_json:
         print(json.dumps(configs, indent=2, ensure_ascii=False))
         return 0
-    print("current=%s (%s) count=%s"
-          % (configs.get("current_index"), configs.get("current_name"),
-             configs.get("count")))
-    for item in configs.get("configs") or []:
-        mark = "<- active" if item.get("active") else ""
-        print("  %d  %-20s %s" % (item["index"], item["name"], mark))
+    print_configs(configs)
     return 0
 
 
@@ -319,7 +319,7 @@ def _used_bands(preset: dict[str, Any]) -> tuple[list[Band], list[Band]]:
 
 def _print_bands(preset: dict[str, Any], which: str) -> None:
     print("%s  (index %d%s)" % (preset["name"], preset["index"],
-                               ", active" if preset["active"] else ""))
+                               ", stored" if preset["stored_current"] else ""))
     for channel, key in (("L", "bands_left"), ("R", "bands_right")):
         if which not in ("both", channel.lower()):
             continue
@@ -345,11 +345,11 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                 if as_json:
                     print(json.dumps(presets, indent=2, ensure_ascii=False))
                     return 0
-                print("current=%s count=%s"
-                      % (presets.get("current_index"), presets.get("count")))
+                print("stored=%s count=%s"
+                      % (presets.get("stored_index"), presets.get("count")))
                 for preset in presets["presets"]:
                     used = sum(1 for b in preset["bands_left"] if b["enabled"])
-                    mark = "<- active" if preset["active"] else ""
+                    mark = "<- stored" if preset["stored_current"] else ""
                     print("  %d  %-24s %2d bands  hash=0x%08X %s"
                           % (preset["index"], preset["name"], used,
                              preset["hash"], mark))
@@ -401,9 +401,9 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                 # one back unless the caller asked for the new one.
                 if not args.activate:
                     now = dev.current_config_index()
-                    if now != presets.get("current_index"):
+                    if now != presets.get("stored_index"):
                         dev.send(CMD_SWITCH_MCU_CONFIG,
-                                 presets.get("current_index") or 0, PT_WRITE)
+                                 presets.get("stored_index") or 0, PT_WRITE)
                         time.sleep(0.15)
                 after = read_presets(dev)
                 found = find_preset(after, name)
@@ -414,7 +414,7 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                     "count_before": presets.get("count"),
                     "count_after": after.get("count"),
                     "bands": len(left),
-                    "current_index": after.get("current_index"),
+                    "stored_index": after.get("stored_index"),
                 }
                 if as_json:
                     print(json.dumps(report, indent=2, ensure_ascii=False))
@@ -445,15 +445,15 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                     "index": preset["index"],
                     "count_before": presets.get("count"),
                     "count_after": after.get("count"),
-                    "current_index": after.get("current_index"),
+                    "stored_index": after.get("stored_index"),
                     "presets": [p["name"] for p in after["presets"]],
                 }
                 if as_json:
                     print(json.dumps(report, indent=2, ensure_ascii=False))
                 else:
-                    print("deleted %r (count %s -> %s), active=%s"
+                    print("deleted %r (count %s -> %s), stored=%s"
                           % (preset["name"], report["count_before"],
-                             report["count_after"], report["current_index"]))
+                             report["count_after"], report["stored_index"]))
                 return 0
 
             if args.peq_command == "rename":

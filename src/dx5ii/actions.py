@@ -16,22 +16,25 @@ from .fields import resolve_config, resolve_output
 
 
 def state_summary(snap: dict[str, Any]) -> dict[str, Any]:
-    """Condense a snapshot to the four values a caller cares about."""
+    """Condense a snapshot to the values a caller cares about.
+
+    ``stored_*`` is the slot the device keeps selected; ``playing_*`` is what
+    it is audible on.  They differ while Topping Home plays a cloud config:
+    the slot is stored, the cloud config is what you hear.
+    """
     settings = snap.get("settings") or {}
     configs = snap.get("configs") or {}
-    preview = snap.get("peq") or {}
-
-    index = configs.get("current_index")
-    if index is None and preview.get("preview_active") is False:
-        index = preview.get("local_index")
+    playing = configs.get("playing") or {}
     return {
         "output": settings.get("output"),
         "output_raw": settings.get("output_raw"),
         "input": settings.get("input"),
         "input_raw": settings.get("input_raw"),
-        "config_index": index,
-        "config_name": configs.get("current_name"),
-        "preview_active": preview.get("preview_active"),
+        "stored_index": configs.get("stored_index"),
+        "stored_name": configs.get("stored_name"),
+        "playing_source": playing.get("source"),
+        "playing_slot_index": playing.get("slot_index"),
+        "playing_slot_name": playing.get("slot_name"),
     }
 
 
@@ -52,7 +55,7 @@ def apply_changes(
     ``actions`` and ``errors``.
     """
     configs = snap.get("configs") or {}
-    known = {item["index"]: item["name"] for item in (configs.get("configs") or [])}
+    known = {item["index"]: item["name"] for item in (configs.get("slots") or [])}
     settings = snap.get("settings") or {}
 
     report: dict[str, Any] = {
@@ -92,8 +95,8 @@ def apply_changes(
                     before.update({
                         "output": (got or {}).get("output"),
                         "output_raw": raw,
-                        "config_index": new_index,
-                        "config_name": known.get(new_index),
+                        "stored_index": new_index,
+                        "stored_name": known.get(new_index),
                     })
                 else:
                     report["errors"].append(
@@ -102,12 +105,12 @@ def apply_changes(
 
     if want_config is not None:
         try:
-            target = resolve_config(want_config, configs.get("configs") or [])
+            target = resolve_config(want_config, configs.get("slots") or [])
         except Dx5iiError as exc:
             report["ok"] = False
             report["errors"].append(str(exc))
         else:
-            start = before.get("config_index")
+            start = before.get("stored_index")
             if start is None:
                 start = dev.current_config_index()
             if start == target:
@@ -128,13 +131,13 @@ def apply_changes(
 
     final = dev.snapshot(include_configs=False, keep_raw=False)
     summary = state_summary(final)
-    if summary["config_index"] is None:
+    if summary["stored_index"] is None:
         try:
-            summary["config_index"] = dev.current_config_index()
+            summary["stored_index"] = dev.current_config_index()
         except Dx5iiError:
             pass
-    if summary["config_index"] is not None:
-        summary["config_name"] = known.get(summary["config_index"])
+    if summary["stored_index"] is not None:
+        summary["stored_name"] = known.get(summary["stored_index"])
     report["after"] = summary
 
     if summary["output"] is None:

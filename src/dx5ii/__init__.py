@@ -49,6 +49,7 @@ from .interpreter import (
     interpret_peq_preview,
     interpret_sampling,
     interpret_settings,
+    resolve_playing,
 )
 from .peq import (
     create_preset,
@@ -111,4 +112,5 @@ __all__ = [
     "interpret_peq_preview",
     "interpret_config_upload",
     "interpret_config_blocks",
+    "resolve_playing",
 ]

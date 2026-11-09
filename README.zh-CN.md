@@ -96,8 +96,8 @@ dx5ii watch 5                           # 监听 5 秒内设备主动推送的�
 ## EQ 预设
 
 ```bash
-dx5ii configs                                    # 旧名，等价于 peq list
-dx5ii peq list                                   # 列出预设（当前激活项标 ←）
+dx5ii configs                                    # 当前音源、存储槽位与全部预设
+dx5ii peq list                                   # 列出预设（设备存储的当前项标 ←）
 dx5ii peq show Dynamic                           # 打印左右声道每段的频点/增益/Q
 dx5ii peq create MyPreset --copy Dynamic         # 复制一份新预设（默认不激活）
 dx5ii peq create MyPreset --from-apo delta.txt   # 从 Equalizer APO 的 Filter 行导入
@@ -137,7 +137,7 @@ from dx5ii import Dx5ii, read_presets, create_preset, parse_apo_filters
 
 with Dx5ii() as dev:
     presets = read_presets(dev)
-    print(presets["current_index"], [p["name"] for p in presets["presets"]])
+    print(presets["stored_index"], [p["name"] for p in presets["presets"]])
 
     left = parse_apo_filters(open("delta.txt").read())
     create_preset(dev, "Imported", left)       # 只给左声道时右声道复制左侧
@@ -192,6 +192,10 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 - **`0x1206` 只读**。切预设用 `0x110E`。
 - **`raw` 会拒绝两个命令**：`0x710B`（恢复出厂）与 `0x712E`（固件更新模式）。后者会让设备直接离开
   USB，只有重新刷写固件才能恢复。确需发送时加 `--force`。
+- **云端配置的名字与滤波不可读**。Topping Home 在放云端配置时，设备只通过 `0x7137` 上报一个
+  `source` 字节和两个哈希；`0x1206` 仍然指设备存储的本地槽位。`configs.playing` 表示实际在放的
+  音源（`local`/`cloud`/`audition`/`unknown`），`configs.stored_index`/`stored_name` 表示存储的
+  槽位，两者不会混。不是本地槽时 `playing.slot_index` 为 null。
 
 ## 测试
 
@@ -199,7 +203,7 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 python -m unittest discover -s tests -t tests -v
 ```
 
-55 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释），不需要设备。
+63 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定），不需要设备。
 
 ## 许可证
 
