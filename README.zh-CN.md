@@ -1,5 +1,9 @@
 # dx5ii
 
+[![PyPI](https://img.shields.io/pypi/v/dx5ii-cli.svg)](https://pypi.org/project/dx5ii-cli/)
+[![Python](https://img.shields.io/pypi/pyversions/dx5ii-cli.svg)](https://pypi.org/project/dx5ii-cli/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 [English](README.md) | **简体中文**
 
 控制 Topping DX5 II（VID `0x152A` / PID `0x8750`，控制协议走 HID `MI_02`）的 Python 包与命令行工具：
