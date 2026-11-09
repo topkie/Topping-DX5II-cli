@@ -240,6 +240,45 @@ class Dx5ii:
                 frames.append(parsed)
         return frames
 
+    def wait_for_frame(
+        self,
+        cmd: int,
+        match: Optional[Callable[[Frame], bool]] = None,
+        timeout_ms: int = 400,
+        idle_ms: Optional[int] = None,
+    ) -> bool:
+        """Wait until the device pushes a frame of ``cmd`` that ``match`` accepts.
+
+        The firmware announces the result of a write on its own: ``0x1206``
+        follows ``0x110E``/``0x110A``/``0x110D``.  Waiting for that frame ends
+        the write as soon as the device has acted instead of sleeping a fixed
+        span.
+
+        Only frames of ``cmd`` count as progress.  The device streams
+        ``0x7130``/``0x7131`` telemetry at roughly 490 frames per second, and
+        letting those reset the idle timer would hide a stalled reply -- the
+        same trap :class:`~dx5ii.stream.ReadSession` had.
+
+        Returns ``True`` when the frame arrived, ``False`` on timeout or when
+        ``cmd`` went quiet for ``idle_ms``.
+        """
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        last_progress = time.monotonic()
+        idle_s = (timeout_ms if idle_ms is None else idle_ms) / 1000.0
+        while True:
+            now = time.monotonic()
+            if now >= deadline or now - last_progress > idle_s:
+                return False
+            buf = self._dev.read(64, 10)
+            if not buf:
+                continue
+            frame = self._parse(buf)
+            if frame is None or frame["cmd"] != cmd:
+                continue
+            last_progress = time.monotonic()
+            if match is None or match(frame):
+                return True
+
     # -- readers -----------------------------------------------------------
 
     def read_core(
@@ -351,7 +390,12 @@ class Dx5ii:
         if not 0 <= idx <= 0xFF:
             raise Dx5iiError(f"config index {index!r} out of range")
         self.send(CMD_SWITCH_MCU_CONFIG, idx, PT_WRITE)
-        self.read_for(settle_ms)
+        # The device pushes 0x1206 once the switch has happened (32-38 ms in
+        # practice).  When it stays quiet the switch may still have taken
+        # effect, so the read-back below -- not the silence -- decides.
+        self.wait_for_frame(
+            CMD_CURRENT_CONFIG, lambda frame: frame["data"] == idx,
+            timeout_ms=min(settle_ms, 250))
         if not verify:
             return idx
         return self.current_config_index()

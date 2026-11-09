@@ -18,6 +18,7 @@ from typing import Any, Iterable, Optional, Sequence
 
 from .bands import Band, encode_block, encode_name_words
 from .constants import (
+    CMD_CURRENT_CONFIG,
     CMD_DELETE_CONFIG,
     CMD_DOWNLOAD_CONFIG,
     CMD_GET_SETTINGS,
@@ -91,11 +92,26 @@ def create_preset(
 
 
 def delete_preset(dev: Any, index: int, switch_to: int, settle_ms: int = 300) -> None:
-    """Delete preset ``index`` and re-select ``switch_to``."""
+    """Delete preset ``index`` and re-select ``switch_to``.
+
+    Both steps end on the ``0x1206`` frame the device pushes when the active
+    preset moves, instead of sleeping a fixed span.  A device that stays quiet
+    falls back to the old wait, so a dropped push cannot shorten the operation.
+    """
+    wait = getattr(dev, "wait_for_frame", None)
     dev.send(CMD_DELETE_CONFIG, int(index), PT_WRITE)
-    time.sleep(0.14)
+    if wait is not None:
+        wait(CMD_CURRENT_CONFIG, None, timeout_ms=200)
+    else:
+        time.sleep(0.14)
     dev.send(CMD_SWITCH_MCU_CONFIG, int(switch_to), PT_WRITE)
-    time.sleep(0.12 + settle_ms / 1000.0)
+    if wait is not None:
+        if not wait(CMD_CURRENT_CONFIG,
+                    lambda frame: frame["data"] == int(switch_to),
+                    timeout_ms=max(settle_ms, 300)):
+            time.sleep(0.12)
+    else:
+        time.sleep(0.12 + settle_ms / 1000.0)
 
 
 def rename_preset(dev: Any, index: int, name: str, settle_ms: int = 200) -> None:
@@ -103,10 +119,19 @@ def rename_preset(dev: Any, index: int, name: str, settle_ms: int = 200) -> None
 
     The device accepts four name frames per rename; sending more is ignored
     silently, so the frame count must match ``len(encode_name_words(name))``.
+    Completion is the ``0x1206`` frame for this slot, with the old wait kept as
+    the fallback when the device does not announce it.
     """
     words = encode_name_words(name)
     dev.send(CMD_RENAME_CONFIG_INDEX, int(index), PT_WRITE)
     time.sleep(0.05)
     for i, word in enumerate(words):
         dev.send(CMD_RENAME_CONFIG_NAME, word, PT_WRITE, total=len(words), cur=i)
-    time.sleep(0.08 + settle_ms / 1000.0)
+    wait = getattr(dev, "wait_for_frame", None)
+    if wait is not None:
+        if not wait(CMD_CURRENT_CONFIG,
+                    lambda frame: frame["data"] == int(index),
+                    timeout_ms=max(settle_ms, 300)):
+            time.sleep(0.15)
+    else:
+        time.sleep(0.08 + settle_ms / 1000.0)
