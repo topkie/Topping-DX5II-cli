@@ -179,6 +179,27 @@ class ReadSessionTests(unittest.TestCase):
         self.assertIs(session.state, ReadState.COMPLETE)
         self.assertEqual([f["cmd"] for f in collector.frames], [0x7137] * 3 + [0x7132])
 
+    def test_telemetry_does_not_start_the_collect(self) -> None:
+        session, _, clock = self.make({(0x710C, 52): 1}, timeout_ms=900)
+        for _ in range(100):
+            session.step(frame(0x7131, 0, 8, 0))
+            clock.advance(5)
+        self.assertIs(session.state, ReadState.WAITING)
+        clock.advance(1000)
+        self.assertIs(session.step(), ReadState.TIMED_OUT)
+
+    def test_stall_ignores_unwatched_frames(self) -> None:
+        session, _, clock = self.make({(0x710C, 52): 1}, timeout_ms=2000,
+                                      idle_ms=250)
+        for f in run(0x710C, 3, 52):
+            session.step(f)
+            clock.advance(2)
+        self.assertIs(session.state, ReadState.COLLECTING)
+        for _ in range(100):
+            session.step(frame(0x7130, 0, 1, 0))
+            clock.advance(5)
+        self.assertIs(session.state, ReadState.STALLED)
+
     def test_poll_interval_shrinks_while_settling(self) -> None:
         session, _, _ = self.make({(0x7132, 1): 1}, settle_ms=60)
         self.assertEqual(session.poll_ms, 20)

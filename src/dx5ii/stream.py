@@ -123,6 +123,11 @@ class StreamCollector:
 
     # -- inspection --------------------------------------------------------
 
+    def accepts(self, frame: Frame) -> bool:
+        """True when ``frame`` belongs to a watched shape."""
+        shape: Shape = (frame["cmd"], frame["total"])
+        return shape in self._required or shape in self._extra
+
     def is_complete(self) -> bool:
         """True when every shape has all the runs it asked for."""
         return all(len(self._done[key]) >= self._required[key]
@@ -218,10 +223,15 @@ class ReadSession:
             return self.state
 
         if frame is not None:
+            watched = self.collector.accepts(frame)
             self.collector.feed(frame)
-            self._last_progress = now
-            if self.state is ReadState.WAITING:
-                self.state = ReadState.COLLECTING
+            if watched:
+                # Only frames we asked for count as progress.  Telemetry that
+                # the device streams on its own must not hide a reply that
+                # never arrives, and its absence must not fake a stall.
+                self._last_progress = now
+                if self.state is ReadState.WAITING:
+                    self.state = ReadState.COLLECTING
 
         if self.state is ReadState.SETTLING:
             if now >= self._settle_until:
