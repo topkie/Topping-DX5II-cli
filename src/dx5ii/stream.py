@@ -17,7 +17,9 @@ arrives.
 
 from __future__ import annotations
 
-from typing import Iterable, Mapping, Optional
+import time
+from enum import Enum
+from typing import Callable, Final, Iterable, Mapping, Optional
 
 from .protocol import Frame
 
@@ -148,4 +150,100 @@ class StreamCollector:
                 if len(self._done[key]) < self._required[key]}
 
 
-__all__ = ["StreamCollector", "Shape"]
+class ReadState(str, Enum):
+    """Where a read session is in its life cycle."""
+
+    WAITING = "waiting"
+    """Request sent, no watched frame has arrived yet."""
+    COLLECTING = "collecting"
+    """Frames are arriving, some run is still short."""
+    SETTLING = "settling"
+    """Every run is complete; reading on briefly to catch push frames."""
+    COMPLETE = "complete"
+    """The reply arrived whole."""
+    STALLED = "stalled"
+    """Frames started arriving but then stopped before the reply was whole."""
+    TIMED_OUT = "timed_out"
+    """No frame arrived before the hard deadline."""
+
+
+_TERMINAL: Final = frozenset({ReadState.COMPLETE, ReadState.STALLED,
+                              ReadState.TIMED_OUT})
+
+
+class ReadSession:
+    """Drive one read from "request sent" to a terminal state.
+
+    The transport loop only feeds frames and a clock into :meth:`step`; every
+    decision (whole reply, stalled, timed out, settle finished) lives here and
+    is unit-tested with a fake clock.
+    """
+
+    def __init__(
+        self,
+        collector: StreamCollector,
+        timeout_ms: int,
+        idle_ms: int = 250,
+        settle_ms: int = 0,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.collector = collector
+        self.state = ReadState.WAITING
+        self._clock = clock
+        self._started = clock()
+        self._last_progress = self._started
+        self._timeout = timeout_ms / 1000.0
+        self._idle = idle_ms / 1000.0
+        self._settle = settle_ms / 1000.0
+        self._settle_until: Optional[float] = None
+
+    @property
+    def running(self) -> bool:
+        """False once the session reached a terminal state."""
+        return self.state not in _TERMINAL
+
+    @property
+    def complete(self) -> bool:
+        return self.state is ReadState.COMPLETE
+
+    @property
+    def poll_ms(self) -> int:
+        """How long one ``read`` may block in the current state."""
+        return 10 if self.state is ReadState.SETTLING else 20
+
+    def step(self, frame: Optional[Frame] = None, now: Optional[float] = None) -> ReadState:
+        """Advance one step; feed a frame if one arrived, else ``None``."""
+        now = self._clock() if now is None else now
+        if not self.running:
+            return self.state
+
+        if frame is not None:
+            self.collector.feed(frame)
+            self._last_progress = now
+            if self.state is ReadState.WAITING:
+                self.state = ReadState.COLLECTING
+
+        if self.state is ReadState.SETTLING:
+            if now >= self._settle_until:
+                self.state = ReadState.COMPLETE
+            return self.state
+
+        if self.collector.is_complete():
+            self._enter_settling(now)
+            return self.state
+
+        if now - self._started > self._timeout:
+            self.state = ReadState.TIMED_OUT
+        elif self.state is ReadState.COLLECTING and now - self._last_progress > self._idle:
+            self.state = ReadState.STALLED
+        return self.state
+
+    def _enter_settling(self, now: float) -> None:
+        if self._settle <= 0:
+            self.state = ReadState.COMPLETE
+            return
+        self.state = ReadState.SETTLING
+        self._settle_until = now + self._settle
+
+
+__all__ = ["ReadSession", "ReadState", "Shape", "StreamCollector"]

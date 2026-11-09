@@ -54,7 +54,7 @@ from .interpreter import (
     resolve_playing,
 )
 from .protocol import Frame, build_frame, format_firmware, parse_frame
-from .stream import Shape, StreamCollector
+from .stream import ReadSession, ReadState, Shape, StreamCollector
 
 #: Give up on an answer that has started but stopped arriving for this long.
 DEFAULT_IDLE_MS: Final = 250
@@ -122,6 +122,8 @@ class Dx5ii:
         self._dev: Any = None
         self.raw_frames: list[dict[str, Any]] = []
         self.keep_raw: bool = False
+        #: Terminal state of the most recent :meth:`_collect` session.
+        self.last_read_state: Optional[ReadState] = None
 
         candidates = list_interfaces()
         if path:
@@ -194,52 +196,26 @@ class Dx5ii:
         extra: tuple[Shape, ...] = (),
         hook: Optional[Callable[[StreamCollector], None]] = None,
     ) -> StreamCollector:
-        """Read frames until every requested run is complete.
+        """Read frames until the session decides the reply is over.
 
-        ``timeout_ms`` is the hard ceiling, ``idle_ms`` abandons an answer that
-        stalled, and ``settle_ms`` keeps reading briefly after success so
-        trailing push frames still land in ``collector.frames``.  ``extra``
-        shapes are recorded but not required.
+        All decisions live in :class:`~dx5ii.stream.ReadSession`; this method
+        only pumps the device and hands over what came back.  ``timeout_ms`` is
+        the hard ceiling, ``idle_ms`` abandons a reply that stalled, and
+        ``settle_ms`` keeps reading briefly after success so trailing push
+        frames still land in ``collector.frames``.  ``extra`` shapes are
+        recorded but not required.
         """
         collector = StreamCollector(shapes, extra=extra)
-        deadline = time.monotonic() + timeout_ms / 1000.0
-        last_progress = time.monotonic()
-        complete = False
-
-        while True:
-            if collector.is_complete():
-                complete = True
-                break
-            now = time.monotonic()
-            if now >= deadline:
-                break
-            if collector.has_started() and (now - last_progress) * 1000.0 >= idle_ms:
-                break
-            buf = self._dev.read(64, 20)
-            if not buf:
-                continue
-            frame = self._parse(buf)
-            if frame is None:
-                continue
-            last_progress = time.monotonic()
-            collector.feed(frame)
+        session = ReadSession(collector, timeout_ms=timeout_ms,
+                              idle_ms=idle_ms, settle_ms=settle_ms)
+        while session.running:
+            buf = self._dev.read(64, session.poll_ms)
+            frame = self._parse(buf) if buf else None
+            session.step(frame)
             if hook is not None:
                 hook(collector)
-
-        if complete and settle_ms > 0:
-            self._drain(collector, settle_ms)
+        self.last_read_state = session.state
         return collector
-
-    def _drain(self, collector: StreamCollector, ms: int) -> None:
-        """Keep feeding the collector for ``ms`` without waiting on anything."""
-        end = time.monotonic() + ms / 1000.0
-        while time.monotonic() < end:
-            buf = self._dev.read(64, 10)
-            if not buf:
-                continue
-            frame = self._parse(buf)
-            if frame is not None:
-                collector.feed(frame)
 
     def read_for(self, ms: int, keep_raw: Optional[bool] = None) -> list[Frame]:
         """Collect parsed frames for ``ms`` milliseconds.

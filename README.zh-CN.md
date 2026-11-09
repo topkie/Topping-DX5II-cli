@@ -223,7 +223,7 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 python -m unittest discover -s tests -t tests -v
 ```
 
-91 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机），不需要设备。
+98 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机），不需要设备。
 
 ## 许可证
 
