@@ -5,16 +5,32 @@
 控制 Topping DX5 II（VID `0x152A` / PID `0x8750`，控制协议走 HID `MI_02`）的 Python 包与命令行工具：
 读全部设备状态、按字段写设置、切换输出端口与 EQ 预设、管理设备里的 PEQ 预设。
 
-协议没有公开文档，是从 Topping Home 的 Web 前端 bundle 逆出来的，再在固件 2.58 的实机上逐字段验证。
+协议没有公开文档，是从 Topping Home 的 Web 前端 bundle 逆出来的，再在实机上逐字段验证（固件版本 2.58）。
 帧格式、命令号、字段映射见 `src/dx5ii/constants.py` 与 `src/dx5ii/protocol.py` 的模块注释。
+
+DX5 II 的固件从 `V2.39` 开始支持 Web Home，cli 只在固件 2.58 上验证过，使用时确认固件版本 >= 2.39 或更新到 2.58。
 
 ## 安装
 
 ```bash
-pip install -e .
+pip install dx5ii-cli
 ```
 
-只依赖 `hidapi`。只要 Topping Home 能连接上设备即可，不需要官方应用在跑。
+只依赖 `hidapi`。只要 Topping Web Home 能连接上设备即可，不需要官方应用在跑。
+
+确认安装：
+```bash
+dx5ii --version        # dx5ii 版本
+dx5ii --devices        # 列出 HID 接口，确认能看到 DX5 II
+dx5ii --fast           # 读一遍状态
+```
+--devices 是最快的连通性检查：它不发送任何协议帧，只枚举 HID。
+
+从源码安装：
+```
+git clone <repo> && cd dx5ii
+pip install -e .
+```
 
 不安装也能用：
 
@@ -31,8 +47,8 @@ dx5ii --fast                            # 同上，跳过预设列表（省约 3
 dx5ii --json                            # 输出 JSON
 dx5ii --devices                         # 枚举 HID 接口（含固件版本），标出协议口
 dx5ii --set-output hp_balanced          # 只切输出端口，然后读回
-dx5ii --set-config IER-M7.Harman        # 只切 EQ 预设（名字或索引）
-dx5ii --set-output hp_balanced --set-config IER-M7.Harman
+dx5ii --set-config Dynamic              # 只切 EQ 预设（名字或索引）
+dx5ii --set-output hp_balanced --set-config Dynamic
 ```
 
 `dx5ii` 输出的第一行带设备固件版本，取自 USB `bcdDevice` 描述符（JSON 里的 `release_number`），
@@ -76,12 +92,12 @@ dx5ii watch 5                           # 监听 5 秒内设备主动推送的�
 ```bash
 dx5ii configs                                    # 旧名，等价于 peq list
 dx5ii peq list                                   # 列出预设（当前激活项标 ←）
-dx5ii peq show IER-M7.Harman                     # 打印左右声道每段的频点/增益/Q
-dx5ii peq create MyPreset --copy IER-M7.Harman   # 复制一份新预设（默认不激活）
+dx5ii peq show Dynamic                           # 打印左右声道每段的频点/增益/Q
+dx5ii peq create MyPreset --copy Dynamic         # 复制一份新预设（默认不激活）
 dx5ii peq create MyPreset --from-apo delta.txt   # 从 Equalizer APO 的 Filter 行导入
 dx5ii peq create MyPreset --copy SPEAKER --activate
 dx5ii peq rename MyPreset Better                 # 改名
-dx5ii peq delete MyPreset --switch IER-M7.Harman # 删除，并把激活项切到指定预设
+dx5ii peq delete MyPreset --switch Dynamic       # 删除，并把激活项切到指定预设
 ```
 
 `peq create` / `peq delete` 只做新建与删除，**不提供修改已有预设每一段的手段**——设备协议里没有
@@ -177,8 +193,8 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 python -m unittest discover -s tests -t tests -v
 ```
 
-53 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释），不需要设备。
+55 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释），不需要设备。
 
 ## 许可证
 
-待定（TBD）。
+MIT，见 [LICENSE](LICENSE)。

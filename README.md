@@ -7,18 +7,39 @@ HID `MI_02`): read every device setting, write individual fields, switch the out
 preset, and manage the PEQ presets stored on the device.
 
 The protocol has no public documentation. It was reverse engineered from the Topping Home web
-bundle and then verified field by field on a device running firmware 2.58. Frame layout, command
+bundle and then verified field by field on a real device (firmware 2.58). Frame layout, command
 numbers and field maps live in the module docstrings of `src/dx5ii/constants.py` and
 `src/dx5ii/protocol.py`.
+
+Web Home support starts with DX5 II firmware `V2.39`. This CLI has only been verified against
+firmware 2.58, so confirm the device is at 2.39 or newer — or update it to 2.58 — before relying
+on it.
 
 ## Install
 
 ```bash
-pip install -e .
+pip install dx5ii-cli
 ```
 
-Only `hidapi` is required — the device just has to be reachable from Topping Home. The official app
-itself does not need to be running.
+Only `hidapi` is required — the device just has to be reachable from Topping Web Home. The
+official app itself does not need to be running.
+
+Confirm the install:
+
+```bash
+dx5ii --version        # dx5ii version
+dx5ii --devices        # list HID interfaces, check the DX5 II is visible
+dx5ii --fast           # read the state once
+```
+
+`--devices` is the quickest connectivity check: it sends no protocol frames, it only enumerates HID.
+
+From source:
+
+```bash
+git clone <repo> && cd dx5ii
+pip install -e .
+```
 
 Without installing:
 
@@ -35,8 +56,8 @@ dx5ii --fast                            # same, skip presets (~3 s faster)
 dx5ii --json                            # JSON output
 dx5ii --devices                         # list HID interfaces (+ firmware), mark the protocol one
 dx5ii --set-output hp_balanced          # switch output only, then read back
-dx5ii --set-config IER-M7.Harman        # switch preset by name or index
-dx5ii --set-output hp_balanced --set-config IER-M7.Harman
+dx5ii --set-config Dynamic              # switch preset by name or index
+dx5ii --set-output hp_balanced --set-config Dynamic
 ```
 
 The first line of `dx5ii` output carries the device's firmware version, read from the USB
@@ -82,12 +103,12 @@ lists (`input-option usb,bt`), volumes (`-40.0`) and timeouts (`off`/`10s`/`30s`
 ```bash
 dx5ii configs                                    # legacy alias for peq list
 dx5ii peq list                                   # presets, active one marked with ←
-dx5ii peq show IER-M7.Harman                     # per-band freq/gain/Q, both channels
-dx5ii peq create MyPreset --copy IER-M7.Harman   # duplicate (not activated by default)
+dx5ii peq show Dynamic                           # per-band freq/gain/Q, both channels
+dx5ii peq create MyPreset --copy Dynamic         # duplicate (not activated by default)
 dx5ii peq create MyPreset --from-apo delta.txt   # import Equalizer APO "Filter:" lines
 dx5ii peq create MyPreset --copy SPEAKER --activate
 dx5ii peq rename MyPreset Better
-dx5ii peq delete MyPreset --switch IER-M7.Harman
+dx5ii peq delete MyPreset --switch Dynamic
 ```
 
 `peq create` and `peq delete` only ever add or remove a preset. **There is no way to edit a band of
@@ -190,9 +211,9 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-53 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+55 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
 interpretation). No device needed.
 
 ## License
 
-TBD.
+MIT — see [LICENSE](LICENSE).
