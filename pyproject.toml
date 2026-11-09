@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dx5ii-cli"
-version = "0.0.3"
+version = "0.0.4"
 description = "Control a Topping DX5 II over HID: read state, switch output port and EQ preset"
 readme = "README.md"
 requires-python = ">=3.9"
