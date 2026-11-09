@@ -84,15 +84,22 @@ class BlockTests(unittest.TestCase):
 
 
 class NameWordsTests(unittest.TestCase):
-    def test_eight_words(self) -> None:
+    def test_four_words(self) -> None:
         words = encode_name_words("ProbeTmp")
-        self.assertEqual(len(words), 8)
+        self.assertEqual(len(words), 4)
         self.assertEqual(words[0], int.from_bytes(b"Prob", "little"))
 
-    def test_truncates_to_32_bytes(self) -> None:
+    def test_truncates_to_fourteen_bytes(self) -> None:
         words = encode_name_words("A" * 40)
-        self.assertEqual(len(words), 8)
-        self.assertEqual(words[7], int.from_bytes(b"AAAA", "little"))
+        self.assertEqual(len(words), 4)
+        self.assertEqual(words[3], int.from_bytes(b"AA\x00\x00", "little"))
+
+    def test_truncation_keeps_utf8_boundary(self) -> None:
+        # 13 bytes of ASCII plus a 3-byte character would be cut at byte 14.
+        words = encode_name_words("A" * 13 + "字")
+        raw = b"".join(word.to_bytes(4, "little") for word in words)
+        self.assertEqual(raw[:13], b"A" * 13)
+        self.assertEqual(raw[13:], b"\x00\x00\x00")
 
 
 class ApoParserTests(unittest.TestCase):

@@ -134,7 +134,7 @@ dx5ii peq show Dynamic                           # per-band freq/gain/Q, both ch
 dx5ii peq create MyPreset --copy Dynamic         # duplicate (not activated by default)
 dx5ii peq create MyPreset --from-apo delta.txt   # import Equalizer APO "Filter:" lines
 dx5ii peq create MyPreset --copy SPEAKER --activate
-dx5ii peq rename MyPreset Better
+dx5ii peq rename MyPreset Better                 # names are limited to 14 UTF-8 bytes
 dx5ii peq delete MyPreset --switch Dynamic
 ```
 

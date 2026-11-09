@@ -47,6 +47,10 @@ MIN_Q = 0.1
 MAX_Q = 15.0
 MAX_GAIN_DB = 12.0
 
+#: Renames carry four name frames; the web client truncates names to 14 bytes.
+CONFIG_NAME_WORDS = 4
+DEVICE_NAME_MAX_BYTES = 14
+
 
 @dataclass
 class Band:
@@ -145,9 +149,21 @@ def parse_apo_filters(text: str) -> list[Band]:
 
 
 def encode_name_words(name: str) -> list[int]:
-    """Encode a preset name as the eight UTF-8 words used by rename/upload."""
-    raw = name.encode("utf-8")[:32].ljust(32, b"\x00")
-    return [int.from_bytes(raw[i * 4:(i + 1) * 4], "little") for i in range(8)]
+    """Encode a preset name as the four UTF-8 words used by the rename command.
+
+    The device accepts exactly four name frames per rename.  Truncation stops
+    on a UTF-8 character boundary so a multi-byte name is never cut in half.
+    """
+    raw = name.encode("utf-8")[:DEVICE_NAME_MAX_BYTES]
+    while raw:
+        try:
+            raw.decode("utf-8")
+            break
+        except UnicodeDecodeError:
+            raw = raw[:-1]
+    padded = raw.ljust(CONFIG_NAME_WORDS * 4, b"\x00")
+    return [int.from_bytes(padded[i * 4:(i + 1) * 4], "little")
+            for i in range(CONFIG_NAME_WORDS)]
 
 
 def decode_bands(words: Sequence[int], channel: int) -> list[Band]:

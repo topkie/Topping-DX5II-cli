@@ -20,7 +20,7 @@ import time
 from typing import Any, Optional, Sequence
 
 from .actions import apply_changes, state_summary
-from .bands import Band, parse_apo_filters
+from .bands import CONFIG_NAME_WORDS, DEVICE_NAME_MAX_BYTES, Band, parse_apo_filters
 from .constants import (
     CMD_SWITCH_MCU_CONFIG,
     DESTRUCTIVE_COMMANDS,
@@ -374,8 +374,9 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                 if not name:
                     print("error: empty preset name", file=sys.stderr)
                     return 2
-                if len(name.encode("utf-8")) > 32:
-                    print("error: name longer than 32 UTF-8 bytes", file=sys.stderr)
+                if len(name.encode("utf-8")) > CONFIG_NAME_WORDS * 4:
+                    print("error: name longer than %d UTF-8 bytes"
+                          % (CONFIG_NAME_WORDS * 4), file=sys.stderr)
                     return 2
                 if find_preset(presets, name):
                     print("error: preset %r already exists; refusing to "
@@ -465,8 +466,9 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                     print("error: no preset %r" % args.preset, file=sys.stderr)
                     return 2
                 new_name = args.new_name.strip()
-                if not new_name or len(new_name.encode("utf-8")) > 32:
-                    print("error: name must be 1..32 UTF-8 bytes", file=sys.stderr)
+                if not new_name or len(new_name.encode("utf-8")) > DEVICE_NAME_MAX_BYTES:
+                    print("error: name must be 1..%d UTF-8 bytes"
+                          % DEVICE_NAME_MAX_BYTES, file=sys.stderr)
                     return 2
                 rename_preset(dev, preset["index"], new_name)
                 after = read_presets(dev)

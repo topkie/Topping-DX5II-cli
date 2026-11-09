@@ -99,7 +99,11 @@ def delete_preset(dev: Any, index: int, switch_to: int, settle_ms: int = 300) ->
 
 
 def rename_preset(dev: Any, index: int, name: str, settle_ms: int = 200) -> None:
-    """Rename preset ``index``; the name may be up to 32 UTF-8 bytes."""
+    """Rename preset ``index``; the name is truncated to 14 UTF-8 bytes.
+
+    The device accepts four name frames per rename; sending more is ignored
+    silently, so the frame count must match ``len(encode_name_words(name))``.
+    """
     words = encode_name_words(name)
     dev.send(CMD_RENAME_CONFIG_INDEX, int(index), PT_WRITE)
     time.sleep(0.05)

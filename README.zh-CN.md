@@ -121,7 +121,7 @@ dx5ii peq show Dynamic                           # 打印左右声道每段的�
 dx5ii peq create MyPreset --copy Dynamic         # 复制一份新预设（默认不激活）
 dx5ii peq create MyPreset --from-apo delta.txt   # 从 Equalizer APO 的 Filter 行导入
 dx5ii peq create MyPreset --copy SPEAKER --activate
-dx5ii peq rename MyPreset Better                 # 改名
+dx5ii peq rename MyPreset Better                 # 改名，名字最多 14 字节
 dx5ii peq delete MyPreset --switch Dynamic       # 删除，并把激活项切到指定预设
 ```
 
