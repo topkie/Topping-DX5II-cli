@@ -168,8 +168,11 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 def _cmd_get(path: Optional[str], fields: Sequence[str], as_json: bool) -> int:
+    # A named field comes from ``settings`` or ``pushed`` only, so skip the
+    # sampling and preview requests; ``get all`` keeps the full snapshot.
+    light = bool(fields) and list(fields) != ["all"]
     with _open(path) as dev:
-        snap = dev.snapshot(include_configs=False)
+        snap = dev.snapshot(include_configs=False, light=light)
 
     if not fields or list(fields) == ["all"]:
         if as_json:

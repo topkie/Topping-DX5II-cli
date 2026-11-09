@@ -45,6 +45,14 @@ CMD_CURRENT_CONFIG: Final = 0x1206
 #: 78-word config block, one per EQ preset in the agreementConfig upload.
 CMD_CONFIG_BLOCK: Final = 0x1106
 
+#: Frames in the ``0x7137`` reply (meta / source hash / config hash).
+PEQ_PREVIEW_FRAMES: Final = 3
+#: The upload opens with two ``0x1106`` frames of ``totalFrameLen`` 2: word 0
+#: is the number of preset blocks and word 1 is the ASCII magic ``TPDZ``.
+CONFIG_HEADER_FRAMES: Final = 2
+#: Safety cap on the block count an upload may announce.
+MAX_CONFIG_BLOCKS: Final = 16
+
 # ---------------------------------------------------------------------------
 # EQ preset management
 # ---------------------------------------------------------------------------
@@ -257,6 +265,8 @@ AUTO_SCREEN_TIMEOUT_RAW: Final = {0: "off", 10: "10s", 30: "30s", 60: "60s"}
 
 #: Minimum word count a ``getSettings`` reply must carry to be interpreted.
 SETTINGS_MIN_WORDS: Final = 45
+#: ``totalFrameLen`` of a healthy ``getSettings`` reply on firmware 2.58.
+SETTINGS_FRAME_TOTAL: Final = 52
 
 #: ``peqPreviewState`` source byte -> the configuration actually playing.
 #:

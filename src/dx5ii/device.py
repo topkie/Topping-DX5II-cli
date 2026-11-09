@@ -2,18 +2,25 @@
 
 ``Dx5ii`` opens the protocol interface (``MI_02``), sends frames and collects
 replies.  Interpretation lives in :mod:`dx5ii.interpreter`; field encoding in
-:mod:`dx5ii.fields`.
+:mod:`dx5ii.fields`; the "when is a reply whole" rule in :mod:`dx5ii.stream`.
+
+Replies are timed by their own bounds, not by a stopwatch: a multi-frame answer
+is complete at ``curFrame == totalFrameLen - 1``, and the preset upload also
+announces its block count in a header, so nothing here has to wait out a fixed
+window.
 """
 
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any, Callable, Final, Mapping, Optional
 
 from .constants import (
     CMD_AGREEMENT_CONFIG,
     CMD_BLUETOOTH_STATE,
+    CMD_CONFIG_BLOCK,
     CMD_CROSSFEED_OPTION_MASK,
+    CMD_CURRENT_CONFIG,
     CMD_GET_SAMPLING,
     CMD_GET_SETTINGS,
     CMD_PCM_OPTION_MASK,
@@ -23,11 +30,16 @@ from .constants import (
     CMD_REMOTE_MUTE_MODE,
     CMD_SWITCH_MCU_CONFIG,
     CMD_OUTPUT,
+    CONFIG_BLOCK_WORDS,
+    CONFIG_HEADER_FRAMES,
+    MAX_CONFIG_BLOCKS,
+    PEQ_PREVIEW_FRAMES,
     PID,
     PROTOCOL_INTERFACE,
     PT_READ,
     PT_WRITE,
     REMOTE_MUTE_MODES,
+    SETTINGS_FRAME_TOTAL,
     SETTINGS_MIN_WORDS,
     VID,
 )
@@ -42,6 +54,31 @@ from .interpreter import (
     resolve_playing,
 )
 from .protocol import Frame, build_frame, format_firmware, parse_frame
+from .stream import Shape, StreamCollector
+
+#: Give up on an answer that has started but stopped arriving for this long.
+DEFAULT_IDLE_MS: Final = 250
+#: Pushed frames (PEQ switch, option masks, remote-mute mode) trail the
+#: ``getSettings`` reply by up to ~40 ms on firmware 2.58; keep reading briefly
+#: after the reply itself is complete so they are not lost.
+PUSH_SETTLE_MS: Final = 60
+
+#: ``totalFrameLen`` of the single-frame pushes decoded into ``pushed``.
+_PUSH_SHAPES: Final[tuple[Shape, ...]] = (
+    (CMD_PEQ_STATE, 1),
+    (CMD_PEQ_OPTION_MASK, 1),
+    (CMD_PCM_OPTION_MASK, 1),
+    (CMD_CROSSFEED_OPTION_MASK, 1),
+    (CMD_BLUETOOTH_STATE, 1),
+    (CMD_REMOTE_MUTE_MODE, 1),
+)
+
+_SETTINGS_SHAPE: Final[Shape] = (CMD_GET_SETTINGS, SETTINGS_FRAME_TOTAL)
+_SAMPLING_SHAPE: Final[Shape] = (CMD_GET_SAMPLING, 1)
+_PREVIEW_SHAPE: Final[Shape] = (CMD_PEQ_PREVIEW, PEQ_PREVIEW_FRAMES)
+_UPLOAD_HEADER: Final[Shape] = (CMD_CONFIG_BLOCK, CONFIG_HEADER_FRAMES)
+_UPLOAD_BLOCK: Final[Shape] = (CMD_CONFIG_BLOCK, CONFIG_BLOCK_WORDS)
+_UPLOAD_CURRENT: Final[Shape] = (CMD_CURRENT_CONFIG, 1)
 
 
 def list_interfaces() -> list[dict[str, Any]]:
@@ -139,47 +176,177 @@ class Dx5ii:
             raise Dx5iiError(
                 f"short HID write for cmd 0x{cmd:04X}: {written!r}")
 
+    def _parse(self, buf: Any) -> Optional[Frame]:
+        """Parse one inbound report, recording it when ``keep_raw`` is on."""
+        raw = bytes(buf)
+        if not any(raw):
+            return None
+        if self.keep_raw:
+            self.raw_frames.append({"t": round(time.time(), 3), "hex": raw.hex()})
+        return parse_frame(raw)
+
+    def _collect(
+        self,
+        shapes: Mapping[Shape, int],
+        timeout_ms: int,
+        idle_ms: int = DEFAULT_IDLE_MS,
+        settle_ms: int = 0,
+        extra: tuple[Shape, ...] = (),
+        hook: Optional[Callable[[StreamCollector], None]] = None,
+    ) -> StreamCollector:
+        """Read frames until every requested run is complete.
+
+        ``timeout_ms`` is the hard ceiling, ``idle_ms`` abandons an answer that
+        stalled, and ``settle_ms`` keeps reading briefly after success so
+        trailing push frames still land in ``collector.frames``.  ``extra``
+        shapes are recorded but not required.
+        """
+        collector = StreamCollector(shapes, extra=extra)
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        last_progress = time.monotonic()
+        complete = False
+
+        while True:
+            if collector.is_complete():
+                complete = True
+                break
+            now = time.monotonic()
+            if now >= deadline:
+                break
+            if collector.has_started() and (now - last_progress) * 1000.0 >= idle_ms:
+                break
+            buf = self._dev.read(64, 20)
+            if not buf:
+                continue
+            frame = self._parse(buf)
+            if frame is None:
+                continue
+            last_progress = time.monotonic()
+            collector.feed(frame)
+            if hook is not None:
+                hook(collector)
+
+        if complete and settle_ms > 0:
+            self._drain(collector, settle_ms)
+        return collector
+
+    def _drain(self, collector: StreamCollector, ms: int) -> None:
+        """Keep feeding the collector for ``ms`` without waiting on anything."""
+        end = time.monotonic() + ms / 1000.0
+        while time.monotonic() < end:
+            buf = self._dev.read(64, 10)
+            if not buf:
+                continue
+            frame = self._parse(buf)
+            if frame is not None:
+                collector.feed(frame)
+
     def read_for(self, ms: int, keep_raw: Optional[bool] = None) -> list[Frame]:
-        """Collect parsed frames for ``ms`` milliseconds."""
+        """Collect parsed frames for ``ms`` milliseconds.
+
+        Only for settling writes, where no reply shape is known in advance.
+        """
         keep = self.keep_raw if keep_raw is None else keep_raw
         frames: list[Frame] = []
-        deadline = time.time() + ms / 1000.0
-        while time.time() < deadline:
+        deadline = time.monotonic() + ms / 1000.0
+        while time.monotonic() < deadline:
             buf = self._dev.read(64, 25)
             if not buf:
                 continue
-            buf = bytes(buf)
-            if not any(buf):
+            raw = bytes(buf)
+            if not any(raw):
                 continue
             if keep:
                 self.raw_frames.append(
-                    {"t": round(time.time(), 3), "hex": buf.hex()})
-            parsed = parse_frame(buf)
+                    {"t": round(time.time(), 3), "hex": raw.hex()})
+            parsed = parse_frame(raw)
             if parsed:
                 frames.append(parsed)
         return frames
 
     # -- readers -----------------------------------------------------------
 
-    def read_settings(self, wait_ms: int = 1600) -> list[Frame]:
-        """``getSettings``: 52 frames of one ``uint32`` word each."""
-        self.send(CMD_GET_SETTINGS, 0, PT_READ)
-        return self.read_for(wait_ms)
+    def read_core(
+        self, include_sampling: bool = True, include_preview: bool = True
+    ) -> StreamCollector:
+        """Read settings, sampling and preview state in one window.
 
-    def read_sampling(self, wait_ms: int = 600) -> list[Frame]:
+        The three requests are independent, so they go out together and the
+        reply shape decides when to stop -- the same order the vendor web page
+        uses on connect (``getSettings`` then ``getSampling`` then
+        ``peqPreviewState``).
+        """
+        shapes: dict[Shape, int] = {_SETTINGS_SHAPE: 1}
+        if include_sampling:
+            shapes[_SAMPLING_SHAPE] = 1
+        if include_preview:
+            shapes[_PREVIEW_SHAPE] = 1
+
+        self.send(CMD_GET_SETTINGS, 0, PT_READ)
+        if include_sampling:
+            self.send(CMD_GET_SAMPLING, 0, PT_WRITE)
+        if include_preview:
+            self.send(CMD_PEQ_PREVIEW, 0, PT_READ)
+
+        return self._collect(
+            shapes,
+            timeout_ms=1500,
+            settle_ms=PUSH_SETTLE_MS,
+            extra=_PUSH_SHAPES,
+        )
+
+    def read_settings(self, wait_ms: Optional[int] = None) -> list[Frame]:
+        """``getSettings``: 52 word frames, plus the pushes that follow them."""
+        self.send(CMD_GET_SETTINGS, 0, PT_READ)
+        collector = self._collect(
+            {_SETTINGS_SHAPE: 1},
+            timeout_ms=wait_ms if wait_ms is not None else 1200,
+            settle_ms=PUSH_SETTLE_MS,
+            extra=_PUSH_SHAPES,
+        )
+        return collector.frames
+
+    def read_sampling(self, wait_ms: Optional[int] = None) -> list[Frame]:
         """``getSampling``: one frame carrying the sample-rate code."""
         self.send(CMD_GET_SAMPLING, 0, PT_WRITE)
-        return self.read_for(wait_ms)
+        collector = self._collect(
+            {_SAMPLING_SHAPE: 1},
+            timeout_ms=wait_ms if wait_ms is not None else 600,
+        )
+        return collector.frames
 
-    def read_peq_preview(self, wait_ms: int = 600) -> list[Frame]:
+    def read_peq_preview(self, wait_ms: Optional[int] = None) -> list[Frame]:
         """``peqPreviewState``: three frames (meta / hashes)."""
         self.send(CMD_PEQ_PREVIEW, 0, PT_READ)
-        return self.read_for(wait_ms)
+        collector = self._collect(
+            {_PREVIEW_SHAPE: 1},
+            timeout_ms=wait_ms if wait_ms is not None else 600,
+        )
+        return collector.frames
 
-    def read_config_upload(self, wait_ms: int = 3000) -> list[Frame]:
-        """``agreementConfig``: the EQ preset list. Needs a prior getSettings."""
+    def read_config_upload(self, wait_ms: Optional[int] = None) -> list[Frame]:
+        """``agreementConfig``: the EQ preset list. Needs a prior getSettings.
+
+        The reply opens with a two-frame header: the preset-block count and the
+        ``TPDZ`` magic.  The count is applied to the collector as soon as the
+        header lands, so the read stops after the last announced block.
+        """
+        def apply_header(collector: StreamCollector) -> None:
+            headers = collector.values(_UPLOAD_HEADER)
+            if not headers:
+                return
+            announced = int(headers[0][0])
+            if 0 < announced <= MAX_CONFIG_BLOCKS:
+                collector.require(_UPLOAD_BLOCK, announced)
+
         self.send(CMD_AGREEMENT_CONFIG, 1, PT_WRITE)
-        return self.read_for(wait_ms)
+        collector = self._collect(
+            {_UPLOAD_HEADER: 1, _UPLOAD_BLOCK: MAX_CONFIG_BLOCKS,
+             _UPLOAD_CURRENT: 1},
+            timeout_ms=wait_ms if wait_ms is not None else 2500,
+            hook=apply_header,
+        )
+        return collector.frames
 
     # -- writers -----------------------------------------------------------
 
@@ -192,7 +359,7 @@ class Dx5ii:
         raw = resolve_output(value)
         self.send(CMD_OUTPUT, raw, PT_WRITE)
         self.read_for(settle_ms)
-        words = collect_words(self.read_settings(1600), min_total=SETTINGS_MIN_WORDS)
+        words = collect_words(self.read_settings(), min_total=SETTINGS_MIN_WORDS)
         return interpret_settings(words) if words else None
 
     def set_config_index(
@@ -222,28 +389,35 @@ class Dx5ii:
         preset list.  The preview is only trustworthy while no preview is
         active.
         """
-        preview = interpret_peq_preview(self.read_peq_preview(600))
+        preview = interpret_peq_preview(self.read_peq_preview())
         if preview and not preview.get("preview_active") \
                 and preview.get("local_index") is not None:
             return preview["local_index"]
-        self.read_settings(1600)
-        return interpret_config_upload(self.read_config_upload(3000))["stored_index"]
+        self.read_settings()
+        return interpret_config_upload(self.read_config_upload())["stored_index"]
 
     # -- state assembly ----------------------------------------------------
 
     def snapshot(
-        self, include_configs: bool = True, keep_raw: bool = False
+        self,
+        include_configs: bool = True,
+        keep_raw: bool = False,
+        light: bool = False,
     ) -> dict[str, Any]:
         """Read the full device state.
 
-        ``include_configs`` adds the EQ preset list (about 3 extra seconds).
-        ``getSettings`` always runs first: the device only answers
-        ``agreementConfig`` while that session is established.
+        ``include_configs`` adds the EQ preset list (about 1 s).  ``light``
+        skips sampling and preview state and reads settings only, for callers
+        that need a single field.  ``getSettings`` always runs first: the
+        device only answers ``agreementConfig`` while that session is
+        established.
         """
         self.keep_raw = keep_raw
         self.raw_frames = []
 
-        frames = self.read_settings(wait_ms=1600)
+        core = self.read_core(
+            include_sampling=not light, include_preview=not light)
+        frames = core.frames
 
         result: dict[str, Any] = {
             "device": {
@@ -258,35 +432,16 @@ class Dx5ii:
             "sampling": None,
             "peq": None,
             "configs": None,
-            "pushed": {},
+            "pushed": _interpret_pushed(frames),
         }
 
-        words = collect_words(frames, min_total=SETTINGS_MIN_WORDS)
-        if words:
-            result["settings"] = interpret_settings(words)
+        words = core.values(_SETTINGS_SHAPE)
+        if words and len(words[0]) >= SETTINGS_MIN_WORDS:
+            result["settings"] = interpret_settings(words[0])
 
-        result["sampling"] = interpret_sampling(self.read_sampling())
-        result["peq"] = interpret_peq_preview(self.read_peq_preview())
-
-        pushed = result["pushed"]
-        for frame in frames:
-            cmd = frame["cmd"]
-            if cmd == CMD_PEQ_STATE:
-                pushed["peq_enabled"] = frame["data"] != 0
-            elif cmd == CMD_PEQ_OPTION_MASK:
-                pushed["peq_option_mask"] = frame["data"]
-            elif cmd == CMD_PCM_OPTION_MASK:
-                pushed["pcm_option_mask"] = frame["data"]
-            elif cmd == CMD_CROSSFEED_OPTION_MASK:
-                pushed["crossfeed_option_mask"] = frame["data"]
-            elif cmd == CMD_BLUETOOTH_STATE:
-                pushed["bluetooth_connected"] = frame["data"] != 0
-            elif cmd == CMD_REMOTE_MUTE_MODE:
-                value = frame["data"]
-                pushed["remote_mute_mode_raw"] = value
-                pushed["remote_mute_mode"] = (
-                    REMOTE_MUTE_MODES[value]
-                    if 0 <= value < len(REMOTE_MUTE_MODES) else value)
+        if not light:
+            result["sampling"] = interpret_sampling(frames)
+            result["peq"] = interpret_peq_preview(frames)
 
         if include_configs:
             configs = interpret_config_upload(self.read_config_upload())
@@ -296,6 +451,30 @@ class Dx5ii:
         if keep_raw:
             result["raw_frames"] = self.raw_frames
         return result
+
+
+def _interpret_pushed(frames: list[Frame]) -> dict[str, Any]:
+    """Decode the single-frame pushes that accompany ``getSettings``."""
+    pushed: dict[str, Any] = {}
+    for frame in frames:
+        cmd = frame["cmd"]
+        if cmd == CMD_PEQ_STATE:
+            pushed["peq_enabled"] = frame["data"] != 0
+        elif cmd == CMD_PEQ_OPTION_MASK:
+            pushed["peq_option_mask"] = frame["data"]
+        elif cmd == CMD_PCM_OPTION_MASK:
+            pushed["pcm_option_mask"] = frame["data"]
+        elif cmd == CMD_CROSSFEED_OPTION_MASK:
+            pushed["crossfeed_option_mask"] = frame["data"]
+        elif cmd == CMD_BLUETOOTH_STATE:
+            pushed["bluetooth_connected"] = frame["data"] != 0
+        elif cmd == CMD_REMOTE_MUTE_MODE:
+            value = frame["data"]
+            pushed["remote_mute_mode_raw"] = value
+            pushed["remote_mute_mode"] = (
+                REMOTE_MUTE_MODES[value]
+                if 0 <= value < len(REMOTE_MUTE_MODES) else value)
+    return pushed
 
 
 __all__ = ["Dx5ii", "Dx5iiError", "list_interfaces"]

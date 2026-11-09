@@ -57,7 +57,7 @@ python -m dx5ii get
 
 ```bash
 dx5ii                                   # full state, including the preset list
-dx5ii --fast                            # same, skip presets (~3 s faster)
+dx5ii --fast                            # same, skip the preset upload
 dx5ii --json                            # JSON output
 dx5ii --devices                         # list HID interfaces (+ firmware), mark the protocol one
 dx5ii --set-output hp_balanced          # switch output only, then read back
@@ -208,6 +208,7 @@ Every exported function and method carries type hints and ships `py.typed`.
 |---|---|
 | `constants.py` | command ids, enum tables, settings word layout |
 | `protocol.py` | frame codec, name decoding, volume conversion |
+| `stream.py` | multi-frame collector: a reply is done at `curFrame == totalFrameLen - 1` |
 | `device.py` | HID handle: open, send/receive, per-command reads, snapshot assembly |
 | `interpreter.py` | frame sequences → state dict (pure, testable offline) |
 | `fields.py` | field table, value encoding, read-back extraction |
@@ -243,8 +244,8 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-63 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
-interpretation). No device needed.
+91 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+interpretation, the multi-frame collector state machine). No device needed.
 
 ## License
 

@@ -49,7 +49,7 @@ python -m dx5ii get
 
 ```bash
 dx5ii                                   # 读全状态（含 EQ 预设列表）
-dx5ii --fast                            # 同上，跳过预设列表（省约 3 秒）
+dx5ii --fast                            # 同上，跳过预设列表
 dx5ii --json                            # 输出 JSON
 dx5ii --devices                         # 枚举 HID 接口（含固件版本），标出协议口
 dx5ii --set-output hp_balanced          # 只切输出端口，然后读回
@@ -190,6 +190,7 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 |---|---|
 | `constants.py` | 命令号、枚举表、settings 字布局 |
 | `protocol.py` | 帧编解码、名字解码、音量换算 |
+| `stream.py` | 多帧收集状态机：`curFrame == totalFrameLen - 1` 即收齐 |
 | `device.py` | HID 句柄：打开、收发、读各命令、组装 snapshot |
 | `interpreter.py` | 帧序列 → 状态 dict（纯函数，可离线测） |
 | `fields.py` | 字段表、值编码、回读取值 |
@@ -222,7 +223,7 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 python -m unittest discover -s tests -t tests -v
 ```
 
-63 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定），不需要设备。
+91 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机），不需要设备。
 
 ## 许可证
 
