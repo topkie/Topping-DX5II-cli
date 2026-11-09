@@ -31,6 +31,7 @@ from .device import Dx5ii, list_interfaces
 from .errors import Dx5iiError
 from .fields import FIELD_ACTIONS, FIELD_SPECS, encode_field, field_raw, field_state
 from .formatting import print_field_rows, print_snapshot, print_switch_report
+from . import __version__
 from .peq import (
     create_preset,
     delete_preset,
@@ -68,6 +69,8 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_epilog(),
     )
+    parser.add_argument("--version", action="version",
+                        version=f"dx5ii {__version__}")
     parser.add_argument("--json", action="store_true",
                         help="emit JSON instead of text")
     parser.add_argument("--devices", action="store_true",

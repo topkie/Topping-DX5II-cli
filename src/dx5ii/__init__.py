@@ -59,7 +59,7 @@ from .peq import (
 )
 from .protocol import Frame, build_frame, db_to_volume, decode_name, format_firmware, mask_to_items, parse_frame, volume_to_db
 
-__version__ = "1.0.0"
+__version__ = "0.0.1"
 
 __all__ = [
     "__version__",
