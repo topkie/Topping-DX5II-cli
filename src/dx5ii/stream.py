@@ -51,6 +51,7 @@ class StreamCollector:
             key: None for key in shapes}
         self._base: dict[Shape, int] = {}
         self._next: dict[Shape, int] = {key: 0 for key in shapes}
+        self._extra_seen: set[Shape] = set()
         self.frames: list[Frame] = []
 
     # -- configuration -----------------------------------------------------
@@ -74,6 +75,7 @@ class StreamCollector:
             return False
         self.frames.append(frame)
         if shape not in self._required:
+            self._extra_seen.add(shape)
             return False  # recorded for its side effects only
         if len(self._done[shape]) >= self._required[shape]:
             return False  # already have every copy we asked for
@@ -132,6 +134,10 @@ class StreamCollector:
         """True when every shape has all the runs it asked for."""
         return all(len(self._done[key]) >= self._required[key]
                    for key in self._required)
+
+    def extras_done(self) -> bool:
+        """True when every side-effect shape has arrived at least once."""
+        return self._extra <= self._extra_seen
 
     def complete_count(self, shape: Shape) -> int:
         return len(self._done[shape])
@@ -234,7 +240,10 @@ class ReadSession:
                     self.state = ReadState.COLLECTING
 
         if self.state is ReadState.SETTLING:
-            if now >= self._settle_until:
+            # The trailing pushes usually all arrive within about 40 ms of the
+            # reply itself; stop as soon as they are in, and only wait the
+            # full settle window when one of them never comes.
+            if self.collector.extras_done() or now >= self._settle_until:
                 self.state = ReadState.COMPLETE
             return self.state
 

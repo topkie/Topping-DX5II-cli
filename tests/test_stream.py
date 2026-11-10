@@ -152,7 +152,8 @@ class ReadSessionTests(unittest.TestCase):
         self.assertIs(session.step(), ReadState.STALLED)
 
     def test_completes_then_settles(self) -> None:
-        session, _, clock = self.make({(0x7137, 3): 1}, settle_ms=60)
+        session, _, clock = self.make({(0x7137, 3): 1}, settle_ms=60,
+                                      extra=((0x7132, 1),))
         for i, data in enumerate([1, 2, 3]):
             session.step(frame(0x7137, data, 3, i))
             clock.advance(2)
@@ -163,6 +164,30 @@ class ReadSessionTests(unittest.TestCase):
         clock.advance(40)
         self.assertIs(session.step(), ReadState.COMPLETE)
         self.assertTrue(session.complete)
+
+    def test_settle_ends_as_soon_as_every_push_arrived(self) -> None:
+        session, _, clock = self.make({(0x7137, 3): 1}, settle_ms=60,
+                                      extra=((0x7132, 1), (0x713E, 1)))
+        for i, data in enumerate([1, 2, 3]):
+            session.step(frame(0x7137, data, 3, i))
+            clock.advance(2)
+        self.assertIs(session.state, ReadState.SETTLING)
+        session.step(frame(0x7132, 1, 1, 0))
+        clock.advance(5)
+        session.step(frame(0x713E, 0, 1, 0))
+        self.assertIs(session.step(), ReadState.COMPLETE)
+
+    def test_settle_waits_out_when_a_push_is_missing(self) -> None:
+        session, _, clock = self.make({(0x7137, 3): 1}, settle_ms=60,
+                                      extra=((0x7132, 1), (0x713E, 1)))
+        for i, data in enumerate([1, 2, 3]):
+            session.step(frame(0x7137, data, 3, i))
+            clock.advance(2)
+        session.step(frame(0x7132, 1, 1, 0))
+        clock.advance(30)
+        self.assertIs(session.step(), ReadState.SETTLING)
+        clock.advance(40)
+        self.assertIs(session.step(), ReadState.COMPLETE)
 
     def test_zero_settle_completes_on_the_last_frame(self) -> None:
         session, _, _ = self.make({(0x7132, 1): 1}, settle_ms=0)
