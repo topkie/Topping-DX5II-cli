@@ -12,8 +12,9 @@ window.
 
 from __future__ import annotations
 
+import json
 import time
-from typing import Any, Callable, Final, Mapping, Optional
+from typing import Any, Callable, Final, Mapping, Optional, TextIO
 
 from .constants import (
     CMD_AGREEMENT_CONFIG,
@@ -129,7 +130,12 @@ class Dx5ii:
     ``Dx5ii(path=...)`` selects an explicit HID path.
     """
 
-    def __init__(self, path: Optional[str] = None) -> None:
+    #: Trace sink; ``None`` unless ``Dx5ii(trace=...)`` was passed.  Declared
+    #: on the class so instances built without ``__init__`` still answer.
+    _trace_file: Optional[TextIO] = None
+
+    def __init__(self, path: Optional[str] = None,
+                 trace: Optional[str] = None) -> None:
         import hid  # fail early with an actionable error
 
         self._hid = hid
@@ -138,6 +144,9 @@ class Dx5ii:
         self.keep_raw: bool = False
         #: Terminal state of the most recent :meth:`_collect` session.
         self.last_read_state: Optional[ReadState] = None
+        self._trace_file: Optional[TextIO] = None
+        if trace:
+            self._trace_file = open(trace, "a", encoding="utf-8")
 
         candidates = list_interfaces()
         if path:
@@ -161,12 +170,28 @@ class Dx5ii:
     # -- lifecycle ---------------------------------------------------------
 
     def close(self) -> None:
-        """Close the HID handle; safe to call twice."""
+        """Close the HID handle and the trace file; safe to call twice."""
         if self._dev is not None:
             try:
                 self._dev.close()
             finally:
                 self._dev = None
+        if self._trace_file is not None:
+            try:
+                self._trace_file.close()
+            finally:
+                self._trace_file = None
+
+    def _trace(self, direction: str, payload: bytes) -> None:
+        """Append one frame to the trace file, when tracing is on."""
+        if self._trace_file is None:
+            return
+        self._trace_file.write(json.dumps({
+            "t": round(time.time(), 3),
+            "dir": direction,
+            "hex": payload.hex(),
+        }) + "\n")
+        self._trace_file.flush()
 
     def __enter__(self) -> "Dx5ii":
         return self
@@ -188,6 +213,7 @@ class Dx5ii:
         """Write one frame; raises :class:`Dx5iiError` on a short write."""
         frame = build_frame(cmd, data, protocol, total, cur)
         written = self._dev.write(b"\x00" + frame)
+        self._trace("tx", b"\x00" + frame)
         if written != len(frame) + 1:
             raise Dx5iiError(
                 f"short HID write for cmd 0x{cmd:04X}: {written!r}")
@@ -197,6 +223,7 @@ class Dx5ii:
         raw = bytes(buf)
         if not any(raw):
             return None
+        self._trace("rx", raw)
         if self.keep_raw:
             self.raw_frames.append({"t": round(time.time(), 3), "hex": raw.hex()})
         return parse_frame(raw)
@@ -239,6 +266,7 @@ class Dx5ii:
         raw = bytes(buf)
         if not any(raw):
             return None
+        self._trace("rx", raw)
         return parse_frame(raw)
 
     def read_for(self, ms: int, keep_raw: Optional[bool] = None) -> list[Frame]:
@@ -256,6 +284,7 @@ class Dx5ii:
             raw = bytes(buf)
             if not any(raw):
                 continue
+            self._trace("rx", raw)
             if keep:
                 self.raw_frames.append(
                     {"t": round(time.time(), 3), "hex": raw.hex()})

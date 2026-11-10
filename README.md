@@ -114,7 +114,15 @@ dx5ii watch -f --cmd 0x7137 --json      # one JSON object per matching frame
 and `data`, but nothing is interpreted into named fields and no scaling is applied. A `0x710C`
 reply is 52 lines and `0x7137` is three, one 32-bit word each; `data` is shown in both decimal
 and hex. When you send a multi-frame command yourself, set `--total` and `--cur`, because the
-device only accepts consecutive frame numbers.
+device only accepts consecutive frame numbers. `--wait MS` widens the collection window when a
+reply is longer than the default 800 ms, and `raw` echoes the frame it sent as a `tx` line
+before the replies.
+
+Every command also accepts `--trace PATH`, which appends each frame written to the device and
+each report read back to `PATH` as one JSON object per line
+(`{"t": seconds, "dir": "tx"|"rx", "hex": "..."}`). Use it when a reading disagrees with the
+device panel: the trace shows the exact bytes on both sides, so a wrong checksum, frame count
+or payload encoding is visible without reading the source.
 
 There are 43 fields; `dx5ii --help` lists them all. Grouped:
 
@@ -271,7 +279,7 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-158 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+166 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
 interpretation, the multi-frame collector and read-session state machines, the write
 confirmation wait, the temporary preview handshake). No device needed.
 

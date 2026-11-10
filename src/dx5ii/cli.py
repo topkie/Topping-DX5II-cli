@@ -59,8 +59,8 @@ from .peq import (
 from .protocol import format_firmware
 
 
-def _open(path: Optional[str] = None) -> Dx5ii:
-    return Dx5ii(path=path)
+def _open(path: Optional[str] = None, trace: Optional[str] = None) -> Dx5ii:
+    return Dx5ii(path=path, trace=trace)
 
 
 def _epilog() -> str:
@@ -97,6 +97,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fast", action="store_true",
                         help="skip the EQ preset list (saves ~3 s)")
     parser.add_argument("--path", help="explicit HID path (interface 2)")
+    parser.add_argument("--trace", metavar="PATH",
+                        help="append every frame sent and received to PATH "
+                             "as JSON lines")
     parser.add_argument("--set-output", metavar="NAME",
                         help="switch the output port, e.g. hp_balanced")
     parser.add_argument("--set-config", metavar="NAME|INDEX",
@@ -104,9 +107,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", metavar="command")
 
+    def add_trace(target: argparse.ArgumentParser) -> None:
+        target.add_argument("--trace", metavar="PATH", default=argparse.SUPPRESS,
+                            help="append every frame sent and received to "
+                                 "PATH as JSON lines")
+
     def add_common(target: argparse.ArgumentParser) -> None:
         target.add_argument("--json", action="store_true", help="emit JSON")
         target.add_argument("--path", help="explicit HID path (interface 2)")
+        add_trace(target)
 
     p_get = sub.add_parser("get", help="print current state")
     p_get.add_argument("fields", nargs="*", metavar="field",
@@ -123,7 +132,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_raw.add_argument("--pt", choices=("read", "write"), default="write")
     p_raw.add_argument("--total", type=lambda s: int(s, 0), default=1)
     p_raw.add_argument("--cur", type=lambda s: int(s, 0), default=1)
+    p_raw.add_argument("--wait", type=int, default=800, metavar="MS",
+                       help="how long to collect replies (default: 800)")
     p_raw.add_argument("--path")
+    add_trace(p_raw)
     p_raw.add_argument("--force", action="store_true",
                        help="allow commands that cannot be undone "
                             "(factory reset, firmware update mode)")
@@ -142,6 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_watch.add_argument("--json", action="store_true",
                          help="print one JSON object per frame")
     p_watch.add_argument("--path")
+    add_trace(p_watch)
 
     p_cfg = sub.add_parser("configs", help="list the EQ presets on the device")
     add_common(p_cfg)
@@ -202,11 +215,12 @@ def build_parser() -> argparse.ArgumentParser:
 # subcommand implementations
 # ---------------------------------------------------------------------------
 
-def _cmd_get(path: Optional[str], fields: Sequence[str], as_json: bool) -> int:
+def _cmd_get(path: Optional[str], fields: Sequence[str], as_json: bool,
+             trace: Optional[str] = None) -> int:
     # A named field comes from ``settings`` or ``pushed`` only, so skip the
     # sampling and preview requests; ``get all`` keeps the full snapshot.
     light = bool(fields) and list(fields) != ["all"]
-    with _open(path) as dev:
+    with _open(path, trace) as dev:
         snap = dev.snapshot(include_configs=False, light=light)
 
     if not fields or list(fields) == ["all"]:
@@ -234,13 +248,14 @@ def _cmd_get(path: Optional[str], fields: Sequence[str], as_json: bool) -> int:
     return 0
 
 
-def _cmd_set(path: Optional[str], pairs: Sequence[str], as_json: bool) -> int:
+def _cmd_set(path: Optional[str], pairs: Sequence[str], as_json: bool,
+             trace: Optional[str] = None) -> int:
     if len(pairs) % 2 != 0:
         print("error: set needs field/value pairs", file=sys.stderr)
         return 2
     items = [(pairs[i], pairs[i + 1]) for i in range(0, len(pairs), 2)]
 
-    with _open(path) as dev:
+    with _open(path, trace) as dev:
         before = dev.snapshot(include_configs=False)
         results: list[dict[str, Any]] = []
         for name, value in items:
@@ -294,10 +309,12 @@ def _cmd_raw(path: Optional[str], args: argparse.Namespace) -> int:
         return 2
 
     protocol = PT_READ if args.pt == "read" else PT_WRITE
-    with _open(path) as dev:
+    with _open(path, args.trace) as dev:
         dev.send(cmd, data, protocol, args.total, args.cur)
-        frames = dev.read_for(800)
+        frames = dev.read_for(args.wait)
 
+    print("tx cmd=0x%04X pt=0x%02X total=%d cur=%d data=0x%X (%d)"
+          % (cmd, protocol, args.total, args.cur, data, data))
     for frame in frames:
         print("cmd=0x%04X pt=0x%02X total=%d cur=%d data=%d (0x%X)"
               % (frame["cmd"], frame["protocol"], frame["total"],
@@ -370,7 +387,7 @@ def _follow_reader(dev, interval: float = 5.0, clock=time.monotonic):
 
 def _cmd_watch(args: argparse.Namespace) -> int:
     cmd_filter = int(args.cmd, 0) if args.cmd else None
-    with _open(args.path) as dev:
+    with _open(args.path, args.trace) as dev:
         dev.send(CMD_CONNECT_STATE, 2, PT_WRITE, 1, 1)
         if args.follow:
             return _watch_loop(
@@ -394,8 +411,9 @@ def _cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_configs(path: Optional[str], as_json: bool) -> int:
-    with _open(path) as dev:
+def _cmd_configs(path: Optional[str], as_json: bool,
+                 trace: Optional[str] = None) -> int:
+    with _open(path, trace) as dev:
         snap = dev.snapshot(include_configs=True)
     configs = snap["configs"]
     if as_json:
@@ -469,7 +487,7 @@ def _cmd_peq(args: argparse.Namespace) -> int:
     as_json = bool(getattr(args, "json", False))
 
     try:
-        with _open(path) as dev:
+        with _open(path, args.trace) as dev:
             presets = read_presets(dev)
 
             if args.peq_command == "preview":
@@ -711,15 +729,15 @@ def _cmd_peq(args: argparse.Namespace) -> int:
 
 def _run_subcommand(args: argparse.Namespace) -> int:
     if args.command == "get":
-        return _cmd_get(args.path, args.fields, args.json)
+        return _cmd_get(args.path, args.fields, args.json, args.trace)
     if args.command == "set":
-        return _cmd_set(args.path, args.pairs, args.json)
+        return _cmd_set(args.path, args.pairs, args.json, args.trace)
     if args.command == "raw":
         return _cmd_raw(args.path, args)
     if args.command == "watch":
         return _cmd_watch(args)
     if args.command == "configs":
-        return _cmd_configs(args.path, args.json)
+        return _cmd_configs(args.path, args.json, args.trace)
     if args.command == "peq":
         return _cmd_peq(args)
     raise AssertionError(f"unhandled command {args.command!r}")
@@ -729,7 +747,7 @@ def _read_snapshot(args: argparse.Namespace) -> int:
     """No subcommand: read the state, optionally switching first."""
     write_mode = bool(args.set_output or args.set_config)
     try:
-        with _open(args.path) as dev:
+        with _open(args.path, args.trace) as dev:
             if write_mode:
                 snap = dev.snapshot(include_configs=True, keep_raw=args.raw)
                 report = apply_changes(dev, snap, args.set_output, args.set_config)
