@@ -20,7 +20,14 @@ import time
 from typing import Any, Optional, Sequence
 
 from .actions import apply_changes, state_summary
-from .bands import CONFIG_NAME_WORDS, DEVICE_NAME_MAX_BYTES, Band, parse_apo_filters
+from .bands import (
+    CONFIG_NAME_WORDS,
+    DEVICE_NAME_MAX_BYTES,
+    Band,
+    encode_preamp,
+    parse_apo_filters,
+    parse_apo_preamp,
+)
 from .constants import (
     CMD_SWITCH_MCU_CONFIG,
     DESTRUCTIVE_COMMANDS,
@@ -324,6 +331,8 @@ def _used_bands(preset: dict[str, Any]) -> tuple[list[Band], list[Band]]:
 def _print_bands(preset: dict[str, Any], which: str) -> None:
     print("%s  (index %d%s)" % (preset["name"], preset["index"],
                                ", stored" if preset["stored_current"] else ""))
+    print("  preamp L %+0.1f dB  R %+0.1f dB"
+          % (preset["preamp_left"], preset["preamp_right"]))
     for channel, key in (("L", "bands_left"), ("R", "bands_right")):
         if which not in ("both", channel.lower()):
             continue
@@ -356,9 +365,10 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                 for preset in presets["presets"]:
                     used = sum(1 for b in preset["bands_left"] if b["enabled"])
                     mark = "<- stored" if preset["stored_current"] else ""
-                    print("  %d  %-24s %2d bands  hash=0x%08X %s"
+                    print("  %d  %-24s %2d bands  preamp L%+0.1f R%+0.1f %s"
                           % (preset["index"], preset["name"], used,
-                             preset["hash"], mark))
+                             preset["preamp_left"],
+                             preset["preamp_right"], mark))
                 return 0
 
             if args.peq_command == "show":
@@ -386,6 +396,7 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                           "overwrite an existing preset" % name, file=sys.stderr)
                     return 2
 
+                head = None
                 if args.copy:
                     source = _resolve_preset(presets, args.copy)
                     if source is None:
@@ -393,6 +404,8 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                               file=sys.stderr)
                         return 2
                     left, right = _used_bands(source)
+                    head = [1, encode_preamp(source["preamp_left"]),
+                            1, encode_preamp(source["preamp_right"])]
                 else:
                     text = io.open(args.from_apo, encoding="utf-8",
                                    errors="replace").read()
@@ -403,8 +416,13 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                               file=sys.stderr)
                         return 2
                     right = list(left)
+                    preamp = parse_apo_preamp(text,
+                                              device=dev.info.get("product"))
+                    if preamp is not None:
+                        word = encode_preamp(preamp)
+                        head = [1, word, 1, word]
 
-                index = create_preset(dev, name, left, right)
+                index = create_preset(dev, name, left, right, head=head)
                 # Creating a preset makes the device activate it; put the old
                 # one back unless the caller asked for the new one.
                 if not args.activate:

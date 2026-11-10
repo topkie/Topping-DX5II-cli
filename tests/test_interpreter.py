@@ -128,7 +128,10 @@ class ConfigUploadTests(unittest.TestCase):
     def _block(self, name_words: list[int], base: int) -> list[dict]:
         words = [0] * 78
         words[0:len(name_words)] = name_words
-        words[5] = 0xABCD
+        from dx5ii.bands import encode_preamp
+
+        words[5] = encode_preamp(-3.0)
+        words[7] = encode_preamp(-3.0)
         return [frame(0x1106, w, total=78, index=base + i)
                 for i, w in enumerate(words)]
 
@@ -145,6 +148,7 @@ class ConfigUploadTests(unittest.TestCase):
         self.assertEqual([c["name"] for c in out["slots"]], ["Warm", "Dynamic"])
         self.assertEqual(out["stored_name"], "Dynamic")
         self.assertTrue(out["slots"][1]["stored_current"])
+        self.assertEqual(out["slots"][0]["preamp_left"], -3.0)
         self.assertNotIn("current_index", out)
 
     def test_one_based_indices(self) -> None:

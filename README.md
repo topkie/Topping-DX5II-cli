@@ -151,8 +151,8 @@ overwrites it. That is deliberate.
 `--from-apo` reads the `Device:` section named after the connected unit (the name `dx5ii --devices`
 prints); a file with no `Device:` line is taken as describing that one device. The device stores
 PK, LP, HP, LS and HS bands; any other type (`BP`, `NE`, ...) stops the import with an error
-instead of being dropped, and more than 11 filters in one section is an error too. `Preamp:`
-is discarded, so bake make-up gain into the bands. Nothing is imported silently.
+instead of being dropped, and more than 11 filters in one section is an error too. A `Preamp:` line
+is written into the preset's preamp words (`-12` to `+12` dB). Nothing is imported silently.
 
 Exit codes: `0` OK, `2` device/argument error, `3` write not observed on read-back.
 

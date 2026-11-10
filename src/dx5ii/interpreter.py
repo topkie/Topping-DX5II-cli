@@ -24,7 +24,7 @@ from .constants import (
     SETTINGS_LAYOUT,
     SETTINGS_MIN_WORDS,
 )
-from .bands import decode_block
+from .bands import decode_block, decode_preamp
 from .protocol import Frame, decode_name, mask_to_items, volume_to_db
 
 #: ``crossfeed_conv_option_mask`` bit -> option name (bits are 1, 2).
@@ -272,6 +272,8 @@ def interpret_config_upload(frames: Iterable[Frame]) -> dict[str, Any]:
             "index": i,
             "name": decode_name(words[0:4]),
             "hash": words[5],
+            "preamp_left": decode_preamp(words[5]),
+            "preamp_right": decode_preamp(words[7]),
             "stored_current": i == stored,
         }
         for i, words in enumerate(blocks)
@@ -297,6 +299,8 @@ def interpret_config_blocks(frames: Iterable[Frame]) -> dict[str, Any]:
             "name": block["name"],
             "hash": block["hash"],
             "enabled": block["enabled"],
+            "preamp_left": block["preamp_left"],
+            "preamp_right": block["preamp_right"],
             "stored_current": i == stored,
             "bands_left": [b.as_dict() for b in block["bands_left"]],
             "bands_right": [b.as_dict() for b in block["bands_right"]],

@@ -67,6 +67,10 @@ CMD_RENAME_CONFIG_INDEX: Final = 0x110C
 CMD_RENAME_CONFIG_NAME: Final = 0x110D
 
 CONFIG_BLOCK_WORDS: Final = 78
+# Preamp words 5 and 7 of a preset block: fixed point, 0 dB = 2**25.
+PREAMP_UNITY: Final = 0x02000000
+PREAMP_MIN_DB: Final = -12.0
+PREAMP_MAX_DB: Final = 12.0
 #: The device only accepts 74 words on upload; the last four are padding.
 CONFIG_UPLOAD_WORDS: Final = 74
 CONFIG_HEAD_WORDS: Final = 8

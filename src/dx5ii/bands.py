@@ -4,10 +4,15 @@ Layout (verified 2026-11-09 against the five factory presets; the
 ``IER-M7.Harman`` block matches ``harman_10band.txt`` exactly):
 
     word 0..3     preset name, UTF-8, little-endian, NUL padded
-    word 4        enabled flag (1)
-    word 5        content hash / revision
-    word 6        enabled flag (1)
-    word 7        content hash / revision (same as word 5)
+    word 4        left channel enabled flag (1)
+    word 5        left preamp, fixed point: round(0x02000000 * 10**(dB/20))
+    word 6        right channel enabled flag (1)
+    word 7        right preamp, same encoding
+
+The preamp words are the plain gain applied before the bands, 0.1 dB steps
+over ±12 dB: ``0x02000000`` is 0 dB and ``0x01009B95`` is -6.0 dB.  The
+web UI writes the same value through ``0x9C01`` / ``0x9C03`` when previewing
+a config that is not stored yet.
     word 8..40    left channel, 11 bands x 3 words
     word 41..73   right channel, 11 bands x 3 words
     word 74..77   zero
@@ -25,6 +30,7 @@ spare slot: disabled, 632 Hz, Q 0.707.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Iterable, Sequence
@@ -36,6 +42,9 @@ from .constants import (
     BAND_WORDS,
     CONFIG_BLOCK_WORDS,
     CONFIG_HEAD_WORDS,
+    PREAMP_MAX_DB,
+    PREAMP_MIN_DB,
+    PREAMP_UNITY,
 )
 from .errors import Dx5iiError
 from .protocol import decode_name
@@ -92,6 +101,19 @@ SPARE_BAND = Band(enabled=False, type="PK", gain_db=0.0, freq_hz=DEFAULT_FREQ)
 SPARE_WORDS: list[int] = [0x00000100, DEFAULT_FREQ, round(DEFAULT_Q * 10000)]
 
 
+def encode_preamp(db: float) -> int:
+    """Encode a preamp gain as the fixed-point word the block stores."""
+    clamped = max(PREAMP_MIN_DB, min(PREAMP_MAX_DB, db))
+    return int(round(PREAMP_UNITY * 10.0 ** (clamped / 20.0))) & 0xFFFFFFFF
+
+
+def decode_preamp(word: int) -> float:
+    """Decode a preamp word back to dB, rounded to the stored 0.1 dB step."""
+    if word <= 0:
+        return PREAMP_MIN_DB
+    return round(20.0 * math.log10(word / PREAMP_UNITY), 1)
+
+
 def _signed_byte(value: int) -> int:
     return value - 256 if value & 0x80 else value
 
@@ -142,11 +164,14 @@ def _apo_sections(text: str) -> list[tuple[str | None, list[str]]]:
         if device:
             sections.append((device.group("name").strip(), []))
             continue
-        if _APO_FILTER_LINE.match(line):
-            if not sections:
-                sections.append((None, []))
-            sections[-1][1].append(line)
+        if not sections:
+            sections.append((None, []))
+        sections[-1][1].append(line)
     return sections
+
+
+_APO_PREAMP = re.compile(
+    r"^Preamp\s*:\s*(?P<db>[+-]?[0-9.]+)\s*dB", re.IGNORECASE)
 
 
 def _choose_section(
@@ -196,6 +221,8 @@ def parse_apo_filters(text: str, device: str | None = None) -> list[Band]:
     _, lines = _choose_section(_apo_sections(text), device)
     bands: list[Band] = []
     for line in lines:
+        if not _APO_FILTER_LINE.match(line):
+            continue
         match = _APO_FILTER.match(line)
         if not match:
             raise Dx5iiError("unsupported APO filter line: %r" % line)
@@ -220,6 +247,20 @@ def parse_apo_filters(text: str, device: str | None = None) -> list[Band]:
             "the APO section has %d filters but the device stores %d per "
             "channel" % (len(bands), BANDS_PER_CHANNEL))
     return bands
+
+
+def parse_apo_preamp(text: str, device: str | None = None) -> float | None:
+    """Return the ``Preamp:`` gain of the selected section, in dB.
+
+    ``None`` means the section carries no preamp line, which is different
+    from a preamp of 0 dB.
+    """
+    _, lines = _choose_section(_apo_sections(text), device)
+    for line in lines:
+        match = _APO_PREAMP.match(line)
+        if match:
+            return float(match.group("db"))
+    return None
 
 
 def encode_name_words(name: str) -> list[int]:
@@ -256,6 +297,8 @@ def decode_block(words: Sequence[int]) -> dict:
     return {
         "name": decode_name(list(words[0:4])),
         "enabled": bool(words[4]),
+        "preamp_left": decode_preamp(words[5]),
+        "preamp_right": decode_preamp(words[7]),
         "hash": words[5],
         "bands_left": decode_bands(words, 0),
         "bands_right": decode_bands(words, 1),
@@ -285,7 +328,7 @@ def encode_block(
     for i in range(4):
         words[i] = int.from_bytes(raw[i * 4:(i + 1) * 4], "little")
 
-    words[4:8] = list(head)[:4] if head else [1, 0, 1, 0]
+    words[4:8] = list(head)[:4] if head else [1, PREAMP_UNITY, 1, PREAMP_UNITY]
 
     for channel, bands in enumerate((bands_left, bands_right)):
         base = CONFIG_HEAD_WORDS + channel * BANDS_PER_CHANNEL * BAND_WORDS
@@ -305,4 +348,5 @@ __all__ = [
     "encode_block",
     "encode_name_words",
     "parse_apo_filters",
+    "parse_apo_preamp",
 ]

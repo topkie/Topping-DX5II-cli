@@ -14,7 +14,10 @@ from dx5ii.bands import (
     encode_band,
     encode_block,
     encode_name_words,
+    decode_preamp,
+    encode_preamp,
     parse_apo_filters,
+    parse_apo_preamp,
 )
 from dx5ii.errors import Dx5iiError
 
@@ -211,3 +214,49 @@ class ApoDeviceSectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreampTests(unittest.TestCase):
+    def test_round_trip(self) -> None:
+        for db in (-12.0, -6.0, -3.0, 0.0, 2.0, 12.0):
+            self.assertAlmostEqual(decode_preamp(encode_preamp(db)), db,
+                                   places=1)
+
+    def test_zero_is_the_unity_word(self) -> None:
+        self.assertEqual(encode_preamp(0.0), 0x02000000)
+
+    def test_clamps_beyond_the_stored_range(self) -> None:
+        self.assertEqual(encode_preamp(-40.0), encode_preamp(-12.0))
+        self.assertEqual(encode_preamp(40.0), encode_preamp(12.0))
+
+    def test_factory_value_decodes_to_minus_six(self) -> None:
+        self.assertAlmostEqual(decode_preamp(0x01009B95), -6.0, places=1)
+
+    def test_block_carries_the_preamp_words(self) -> None:
+        word = encode_preamp(-6.0)
+        words = encode_block(
+            "P", [Band()], [Band()], head=[1, word, 1, word]
+        )
+        self.assertEqual(words[5], word)
+        self.assertEqual(words[7], word)
+        block = decode_block(words)
+        self.assertAlmostEqual(block["preamp_left"], -6.0, places=1)
+        self.assertAlmostEqual(block["preamp_right"], -6.0, places=1)
+
+
+class ApoPreampTests(unittest.TestCase):
+    def test_reads_the_selected_section(self) -> None:
+        text = (
+            "Device: mic\nPreamp: -3.0 dB\nFilter: ON PK Fc 100 Hz Gain 1 dB Q 1\n"
+            "Device: DX5 II\nPreamp: -6.5 dB\nFilter: ON PK Fc 100 Hz Gain 1 dB Q 1\n"
+        )
+        self.assertEqual(parse_apo_preamp(text, device="DX5 II"), -6.5)
+        self.assertEqual(len(parse_apo_filters(text, device="DX5 II")), 1)
+
+    def test_absent_line_is_none(self) -> None:
+        self.assertIsNone(
+            parse_apo_preamp("Filter: ON PK Fc 100 Hz Gain 1 dB Q 1\n"))
+
+    def test_zero_is_not_none(self) -> None:
+        text = "Preamp: 0.0 dB\nFilter: ON PK Fc 100 Hz Gain 1 dB Q 1\n"
+        self.assertEqual(parse_apo_preamp(text), 0.0)
