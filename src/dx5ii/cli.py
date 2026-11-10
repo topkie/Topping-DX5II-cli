@@ -271,8 +271,7 @@ def _cmd_get(path: Optional[str], fields: Sequence[str], as_json: bool,
     selected: dict[str, Any] = {}
     for name in fields:
         if name not in FIELD_SPECS:
-            print(f"error: unknown field {name!r}", file=sys.stderr)
-            return 2
+            return _fail(f"error: unknown field {name!r}")
         value = field_state(snap, name)
         selected[name] = value
         raw = field_raw(snap, name)
@@ -289,8 +288,7 @@ def _cmd_get(path: Optional[str], fields: Sequence[str], as_json: bool,
 def _cmd_set(path: Optional[str], pairs: Sequence[str], as_json: bool,
              trace: Optional[str] = None) -> int:
     if len(pairs) % 2 != 0:
-        print("error: set needs field/value pairs", file=sys.stderr)
-        return 2
+        return _fail("error: set needs field/value pairs")
     items = [(pairs[i], pairs[i + 1]) for i in range(0, len(pairs), 2)]
 
     with _open(path, trace) as dev:
@@ -570,379 +568,354 @@ def _print_bands(preset: dict[str, Any], which: str) -> None:
                      format_gain(band["gain_db"]), band["q"]))
 
 
+def _fail(message: str, code: int = 2) -> int:
+    """Print an error line and return the exit code for it."""
+    print(message, file=sys.stderr)
+    return code
+
+
+def _emit(payload: Any, text: list[str], as_json: bool) -> None:
+    """Print either the JSON payload or the prepared text lines."""
+    if as_json:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        for line in text:
+            print(line)
+
+
+def _load_apo(path: str, product: Optional[str]) -> tuple[list[Band], Optional[float]]:
+    """Read an Equalizer APO file and return its bands and preamp."""
+    text = io.open(path, encoding="utf-8", errors="replace").read()
+    bands = parse_apo_filters(text, device=product)
+    if not bands:
+        raise ValueError("no filters parsed from %s" % path)
+    return bands, parse_apo_preamp(text, device=product)
+
+
+def _apo_preset(path: str, product: Optional[str], name: str) -> dict[str, Any]:
+    """Build a preset payload from an APO file, both channels identical."""
+    bands, preamp = _load_apo(path, product)
+    value = 0.0 if preamp is None else preamp
+    return {
+        "name": name,
+        "preamp_left": value,
+        "preamp_right": value,
+        "enabled_left": True,
+        "enabled_right": True,
+        "bands_left": [b.as_dict() for b in bands],
+        "bands_right": [b.as_dict() for b in bands],
+    }
+
+
+def _peq_preview(dev, args, presets, preset_blocks, as_json) -> int:
+    if args.stop:
+        state = leave_preview(dev)
+        _emit(state, ["preview stopped; back to slot %s (%s)"
+                      % (presets.get("stored_index"),
+                         presets.get("stored_name"))], as_json)
+        return 0 if not state.get("preview_active") else 3
+
+    if args.from_apo:
+        try:
+            preset = _apo_preset(args.from_apo, dev.info.get("product"),
+                                 args.from_apo.rsplit("/", 1)[-1].rsplit("\\", 1)[-1])
+        except ValueError as exc:
+            return _fail("error: %s" % exc)
+    elif args.preset:
+        preset = _resolve_preset(presets, args.preset)
+        if preset is None:
+            return _fail("error: no preset %r" % args.preset)
+    else:
+        return _fail("error: name a preset to preview, pass --from-apo, "
+                     "or pass --stop")
+
+    try:
+        state = enter_preview(dev, preset)
+    except BaseException:
+        # Ctrl-C in the middle of the handshake would leave the device
+        # playing half a config; put it back before dying.
+        try:
+            leave_preview(dev)
+        except Exception:
+            pass
+        raise
+
+    ok = bool(state.get("preview_active"))
+    if ok and not _save_last_preview(preset):
+        print("warning: could not record this preview for --last",
+              file=sys.stderr)
+    report = {
+        "preview_active": state.get("preview_active"),
+        "source": state.get("source_name"),
+        "preset": preset["name"],
+        "bands": len(preset.get("bands_left") or []),
+        "stored_index": presets.get("stored_index"),
+        "stored_name": presets.get("stored_name"),
+    }
+    _emit(report, [
+        "previewing %r (audition, %d bands); the stored slot %s (%s) is untouched"
+        % (preset["name"], report["bands"], report["stored_index"],
+           report["stored_name"]),
+        "run 'dx5ii peq preview --stop' to go back",
+    ], as_json)
+    return 0 if ok else 3
+
+
+def _peq_list(dev, args, presets, preset_blocks, as_json) -> int:
+    rows = []
+    for preset in presets["presets"]:
+        used = sum(1 for b in preset["bands_left"] if b["enabled"])
+        mark = "<- stored" if preset["stored_current"] else ""
+        if not preset.get("enabled_left", True):
+            mark = (mark + "  L disabled").strip()
+        rows.append("  %d  %-24s %2d bands  preamp %s %s"
+                    % (preset["index"], preset["name"], used,
+                       format_preamp(preset["preamp_left"],
+                                     preset["preamp_right"]), mark))
+    _emit(presets, ["stored=%s (%s) count=%s"
+                    % (presets.get("stored_index"),
+                       presets.get("stored_name"),
+                       presets.get("count"))] + rows, as_json)
+    return 0
+
+
+def _peq_show(dev, args, presets, preset_blocks, as_json) -> int:
+    preset = _resolve_preset(presets, args.preset)
+    if preset is None:
+        return _fail("error: no preset %r" % args.preset)
+    if as_json:
+        print(json.dumps(preset, indent=2, ensure_ascii=False))
+    else:
+        _print_bands(preset, "both")
+    return 0
+
+
+def _peq_create(dev, args, presets, preset_blocks, as_json) -> int:
+    name = args.name.strip()
+    if not name:
+        return _fail("error: empty preset name")
+    if len(name.encode("utf-8")) > CONFIG_NAME_WORDS * 4:
+        return _fail("error: name longer than %d UTF-8 bytes"
+                     % (CONFIG_NAME_WORDS * 4))
+    if find_preset(presets, name):
+        return _fail("error: preset %r already exists; refusing to overwrite "
+                     "an existing preset" % name)
+
+    head = None
+    if args.copy:
+        source = _resolve_preset(presets, args.copy)
+        if source is None:
+            return _fail("error: no preset %r to copy" % args.copy)
+        left, right = _used_bands(source)
+        head = [1, encode_preamp(source["preamp_left"]),
+                1, encode_preamp(source["preamp_right"])]
+    else:
+        try:
+            left, preamp = _load_apo(args.from_apo, dev.info.get("product"))
+        except ValueError as exc:
+            return _fail("error: %s" % exc)
+        right = list(left)
+        if preamp is not None:
+            word = encode_preamp(preamp)
+            head = [1, word, 1, word]
+
+    index = create_preset(dev, name, left, right, head=head)
+    # Creating a preset makes the device activate it; put the old one back
+    # unless the caller asked for the new one.
+    if not args.activate:
+        now = dev.current_config_index()
+        if now != presets.get("stored_index"):
+            dev.send(CMD_SWITCH_MCU_CONFIG, presets.get("stored_index") or 0, PT_WRITE)
+            time.sleep(0.15)
+    after = read_presets(dev)
+    found = find_preset(after, name)
+    report = {
+        "created": name,
+        "index": index,
+        "found": found is not None,
+        "count_before": presets.get("count"),
+        "count_after": after.get("count"),
+        "bands": len(left),
+        "stored_index": after.get("stored_index"),
+    }
+    _emit(report, ["created %r at index %d (count %s -> %s)"
+                   % (name, index, report["count_before"],
+                      report["count_after"])], as_json)
+    return 0 if report["found"] else 3
+
+
+def _peq_delete(dev, args, presets, preset_blocks, as_json) -> int:
+    preset = _resolve_preset(presets, args.preset)
+    if preset is None:
+        return _fail("error: no preset %r" % args.preset)
+    target = _resolve_preset(presets, args.switch)
+    if target is None:
+        return _fail("error: no preset %r to switch to" % args.switch)
+    if target["index"] == preset["index"]:
+        return _fail("error: --switch must name a different preset")
+    delete_preset(dev, preset["index"], target["index"])
+    after = read_presets(dev)
+    report = {
+        "deleted": preset["name"],
+        "index": preset["index"],
+        "count_before": presets.get("count"),
+        "count_after": after.get("count"),
+        "stored_index": after.get("stored_index"),
+        "presets": [p["name"] for p in after["presets"]],
+    }
+    _emit(report, ["deleted %r (count %s -> %s), stored=%s"
+                   % (preset["name"], report["count_before"],
+                      report["count_after"], report["stored_index"])], as_json)
+    return 0
+
+
+def _peq_rename(dev, args, presets, preset_blocks, as_json) -> int:
+    preset = _resolve_preset(presets, args.preset)
+    if preset is None:
+        return _fail("error: no preset %r" % args.preset)
+    new_name = args.new_name.strip()
+    if not new_name or len(new_name.encode("utf-8")) > DEVICE_NAME_MAX_BYTES:
+        return _fail("error: name must be 1..%d UTF-8 bytes" % DEVICE_NAME_MAX_BYTES)
+    rename_preset(dev, preset["index"], new_name)
+    after = read_presets(dev)
+    renamed = any(p["name"] == new_name for p in after["presets"])
+    report = {
+        "from": preset["name"],
+        "to": new_name,
+        "index": preset["index"],
+        "renamed": renamed,
+    }
+    _emit(report, ["renamed %r -> %r (%s)"
+                   % (preset["name"], new_name,
+                      "ok" if renamed else "not observed")], as_json)
+    return 0 if renamed else 3
+
+
+def _peq_overwrite(dev, args, presets, preset_blocks, as_json) -> int:
+    target = _resolve_preset(presets, args.preset)
+    if target is None:
+        return _fail("error: no preset %r" % args.preset)
+
+    if args.last:
+        preset = _load_last_preview()
+        if preset is None:
+            return _fail("error: nothing to reuse yet; run 'dx5ii peq preview' first")
+        source_label = "last preview (%s)" % preset.get("name")
+    elif args.copy:
+        source = _resolve_preset(presets, args.copy)
+        if source is None:
+            return _fail("error: no preset %r to copy" % args.copy)
+        source_label = "copy of %s" % source["name"]
+        preset = {
+            "name": target["name"],
+            "preamp_left": source["preamp_left"],
+            "preamp_right": source["preamp_right"],
+            "enabled_left": source["enabled_left"],
+            "enabled_right": source["enabled_right"],
+            "bands_left": source["bands_left"],
+            "bands_right": source["bands_right"],
+        }
+    else:
+        base = args.from_apo.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+        try:
+            preset = _apo_preset(args.from_apo, dev.info.get("product"),
+                                 target["name"])
+        except ValueError as exc:
+            return _fail("error: %s" % exc)
+        source_label = "apo:%s" % base
+
+    words = live_words(preset)
+    if args.backup and target["index"] < len(preset_blocks):
+        with io.open(args.backup, "w", encoding="utf-8") as handle:
+            json.dump({"index": target["index"],
+                       "name": target["name"],
+                       "words": preset_blocks[target["index"]]},
+                      handle, indent=2)
+            handle.write("\n")
+
+    if args.dry_run:
+        report = {
+            "slot": target["index"],
+            "name": target["name"],
+            "source": source_label,
+            "commands": len(words),
+            "dry_run": True,
+            "backup": args.backup,
+        }
+        text = ["dry run: %d commands would go into slot %d (%s) from %s"
+                % (len(words), target["index"], target["name"], source_label)]
+        text += ["  0x%04X = 0x%08X" % (cmd, value & 0xFFFFFFFF)
+                 for cmd, value in words[:4]]
+        _emit(report, text, as_json)
+        return 0
+
+    if presets_equal(target, preset):
+        report = {
+            "slot": target["index"],
+            "name": target["name"],
+            "source": source_label,
+            "changed": False,
+            "written": False,
+        }
+        _emit(report, ["slot %d (%s) already matches %s; nothing written"
+                       % (target["index"], target["name"], source_label)], as_json)
+        return 0
+
+    result = overwrite_preset(dev, target["index"], preset,
+                              presets=presets, blocks=preset_blocks)
+    report = {
+        "slot": target["index"],
+        "name": target["name"],
+        "source": source_label,
+        "bands": sum(1 for b in preset["bands_left"] if b["enabled"]),
+        "preamp_left": preset["preamp_left"],
+        "preamp_right": preset["preamp_right"],
+        "changed": True,
+        "verified": result["verified"],
+        "switched": result["switched"],
+        "commands": result["commands"],
+    }
+    text = ["overwrote slot %d (%s) with %d bands from %s"
+            % (target["index"], target["name"], report["bands"], source_label),
+            "  preamp %s" % format_preamp(preset["preamp_left"],
+                                          preset["preamp_right"]),
+            "  verified: %s"
+            % ("yes" if result["verified"] else
+               "skipped" if result["verified"] is None else "no")]
+    if result["switched"]:
+        text.append("  note: the output switched to slot %d and back"
+                    % target["index"])
+    if not args.backup:
+        text.append("hint: use --backup to keep a copy before overwriting")
+    _emit(report, text, as_json)
+    return 0 if result["verified"] is not False else 3
+
+
+_PEQ_COMMANDS = {
+    "preview": _peq_preview,
+    "list": _peq_list,
+    "show": _peq_show,
+    "create": _peq_create,
+    "delete": _peq_delete,
+    "rename": _peq_rename,
+    "overwrite": _peq_overwrite,
+}
+
+
 def _cmd_peq(args: argparse.Namespace) -> int:
     path = getattr(args, "path", None)
     as_json = bool(getattr(args, "json", False))
-
+    handler = _PEQ_COMMANDS.get(args.peq_command)
+    if handler is None:
+        raise AssertionError(f"unhandled peq command {args.peq_command!r}")
     try:
         with _open(path, args.trace) as dev:
             presets, preset_blocks = read_preset_blocks(dev)
-
-            if args.peq_command == "preview":
-                if args.stop:
-                    state = leave_preview(dev)
-                    if as_json:
-                        print(json.dumps(state, indent=2, ensure_ascii=False))
-                    else:
-                        print("preview stopped; back to slot %s (%s)"
-                              % (presets.get("stored_index"),
-                                 presets.get("stored_name")))
-                    return 0 if not state.get("preview_active") else 3
-
-                if args.from_apo:
-                    text = io.open(args.from_apo, encoding="utf-8",
-                                   errors="replace").read()
-                    bands = parse_apo_filters(
-                        text, device=dev.info.get("product"))
-                    if not bands:
-                        print("error: no filters parsed from %s"
-                              % args.from_apo, file=sys.stderr)
-                        return 2
-                    preamp = parse_apo_preamp(
-                        text, device=dev.info.get("product")) or 0.0
-                    preset = {
-                        "name": args.from_apo.rsplit("/", 1)[-1].rsplit("\\", 1)[-1],
-                        "preamp_left": preamp,
-                        "preamp_right": preamp,
-                        "enabled_left": True,
-                        "enabled_right": True,
-                        "bands_left": [b.as_dict() for b in bands],
-                        "bands_right": [b.as_dict() for b in bands],
-                    }
-                elif args.preset:
-                    preset = _resolve_preset(presets, args.preset)
-                    if preset is None:
-                        print("error: no preset %r" % args.preset,
-                              file=sys.stderr)
-                        return 2
-                else:
-                    print("error: name a preset to preview, pass --from-apo, "
-                          "or pass --stop", file=sys.stderr)
-                    return 2
-                try:
-                    state = enter_preview(dev, preset)
-                except BaseException:
-                    # Ctrl-C in the middle of the handshake would leave the
-                    # device playing half a config; put it back before dying.
-                    try:
-                        leave_preview(dev)
-                    except Exception:
-                        pass
-                    raise
-                ok = bool(state.get("preview_active"))
-                if ok and not _save_last_preview(preset):
-                    print("warning: could not record this preview for --last",
-                          file=sys.stderr)
-                report = {
-                    "preview_active": state.get("preview_active"),
-                    "source": state.get("source_name"),
-                    "preset": preset["name"],
-                    "bands": len(preset.get("bands_left") or []),
-                    "stored_index": presets.get("stored_index"),
-                    "stored_name": presets.get("stored_name"),
-                }
-                if as_json:
-                    print(json.dumps(report, indent=2, ensure_ascii=False))
-                else:
-                    print("previewing %r (audition, %d bands); the stored slot "
-                          "%s (%s) is untouched"
-                          % (preset["name"], report["bands"],
-                             report["stored_index"], report["stored_name"]))
-                    print("run 'dx5ii peq preview --stop' to go back")
-                return 0 if ok else 3
-
-            if args.peq_command == "list":
-                if as_json:
-                    print(json.dumps(presets, indent=2, ensure_ascii=False))
-                    return 0
-                print("stored=%s (%s) count=%s"
-                      % (presets.get("stored_index"),
-                         presets.get("stored_name"),
-                         presets.get("count")))
-                for preset in presets["presets"]:
-                    used = sum(1 for b in preset["bands_left"] if b["enabled"])
-                    mark = "<- stored" if preset["stored_current"] else ""
-                    if not preset.get("enabled_left", True):
-                        mark = (mark + "  L disabled").strip()
-                    print("  %d  %-24s %2d bands  preamp %s %s"
-                          % (preset["index"], preset["name"], used,
-                             format_preamp(preset["preamp_left"],
-                                           preset["preamp_right"]), mark))
-                return 0
-
-            if args.peq_command == "show":
-                preset = _resolve_preset(presets, args.preset)
-                if preset is None:
-                    print("error: no preset %r" % args.preset, file=sys.stderr)
-                    return 2
-                if as_json:
-                    print(json.dumps(preset, indent=2, ensure_ascii=False))
-                else:
-                    _print_bands(preset, "both")
-                return 0
-
-            if args.peq_command == "create":
-                name = args.name.strip()
-                if not name:
-                    print("error: empty preset name", file=sys.stderr)
-                    return 2
-                if len(name.encode("utf-8")) > CONFIG_NAME_WORDS * 4:
-                    print("error: name longer than %d UTF-8 bytes"
-                          % (CONFIG_NAME_WORDS * 4), file=sys.stderr)
-                    return 2
-                if find_preset(presets, name):
-                    print("error: preset %r already exists; refusing to "
-                          "overwrite an existing preset" % name, file=sys.stderr)
-                    return 2
-
-                head = None
-                if args.copy:
-                    source = _resolve_preset(presets, args.copy)
-                    if source is None:
-                        print("error: no preset %r to copy" % args.copy,
-                              file=sys.stderr)
-                        return 2
-                    left, right = _used_bands(source)
-                    head = [1, encode_preamp(source["preamp_left"]),
-                            1, encode_preamp(source["preamp_right"])]
-                else:
-                    text = io.open(args.from_apo, encoding="utf-8",
-                                   errors="replace").read()
-                    left = parse_apo_filters(text,
-                                             device=dev.info.get("product"))
-                    if not left:
-                        print("error: no filters parsed from %s" % args.from_apo,
-                              file=sys.stderr)
-                        return 2
-                    right = list(left)
-                    preamp = parse_apo_preamp(text,
-                                              device=dev.info.get("product"))
-                    if preamp is not None:
-                        word = encode_preamp(preamp)
-                        head = [1, word, 1, word]
-
-                index = create_preset(dev, name, left, right, head=head)
-                # Creating a preset makes the device activate it; put the old
-                # one back unless the caller asked for the new one.
-                if not args.activate:
-                    now = dev.current_config_index()
-                    if now != presets.get("stored_index"):
-                        dev.send(CMD_SWITCH_MCU_CONFIG,
-                                 presets.get("stored_index") or 0, PT_WRITE)
-                        time.sleep(0.15)
-                after = read_presets(dev)
-                found = find_preset(after, name)
-                report = {
-                    "created": name,
-                    "index": index,
-                    "found": found is not None,
-                    "count_before": presets.get("count"),
-                    "count_after": after.get("count"),
-                    "bands": len(left),
-                    "stored_index": after.get("stored_index"),
-                }
-                if as_json:
-                    print(json.dumps(report, indent=2, ensure_ascii=False))
-                else:
-                    print("created %r at index %d (count %s -> %s)"
-                          % (name, index, report["count_before"],
-                             report["count_after"]))
-                return 0 if report["found"] else 3
-
-            if args.peq_command == "delete":
-                preset = _resolve_preset(presets, args.preset)
-                if preset is None:
-                    print("error: no preset %r" % args.preset, file=sys.stderr)
-                    return 2
-                target = _resolve_preset(presets, args.switch)
-                if target is None:
-                    print("error: no preset %r to switch to" % args.switch,
-                          file=sys.stderr)
-                    return 2
-                if target["index"] == preset["index"]:
-                    print("error: --switch must name a different preset",
-                          file=sys.stderr)
-                    return 2
-                delete_preset(dev, preset["index"], target["index"])
-                after = read_presets(dev)
-                report = {
-                    "deleted": preset["name"],
-                    "index": preset["index"],
-                    "count_before": presets.get("count"),
-                    "count_after": after.get("count"),
-                    "stored_index": after.get("stored_index"),
-                    "presets": [p["name"] for p in after["presets"]],
-                }
-                if as_json:
-                    print(json.dumps(report, indent=2, ensure_ascii=False))
-                else:
-                    print("deleted %r (count %s -> %s), stored=%s"
-                          % (preset["name"], report["count_before"],
-                             report["count_after"], report["stored_index"]))
-                return 0
-
-            if args.peq_command == "rename":
-                preset = _resolve_preset(presets, args.preset)
-                if preset is None:
-                    print("error: no preset %r" % args.preset, file=sys.stderr)
-                    return 2
-                new_name = args.new_name.strip()
-                if not new_name or len(new_name.encode("utf-8")) > DEVICE_NAME_MAX_BYTES:
-                    print("error: name must be 1..%d UTF-8 bytes"
-                          % DEVICE_NAME_MAX_BYTES, file=sys.stderr)
-                    return 2
-                rename_preset(dev, preset["index"], new_name)
-                after = read_presets(dev)
-                renamed = any(p["name"] == new_name for p in after["presets"])
-                report = {
-                    "from": preset["name"],
-                    "to": new_name,
-                    "index": preset["index"],
-                    "renamed": renamed,
-                }
-                if as_json:
-                    print(json.dumps(report, indent=2, ensure_ascii=False))
-                else:
-                    print("renamed %r -> %r (%s)"
-                          % (preset["name"], new_name,
-                             "ok" if renamed else "not observed"))
-                return 0 if renamed else 3
-
-            if args.peq_command == "overwrite":
-                target = _resolve_preset(presets, args.preset)
-                if target is None:
-                    print("error: no preset %r" % args.preset, file=sys.stderr)
-                    return 2
-
-                if args.last:
-                    preset = _load_last_preview()
-                    if preset is None:
-                        print("error: nothing to reuse yet; run "
-                              "'dx5ii peq preview' first", file=sys.stderr)
-                        return 2
-                    source_label = "last preview (%s)" % preset.get("name")
-                elif args.copy:
-                    source = _resolve_preset(presets, args.copy)
-                    if source is None:
-                        print("error: no preset %r to copy" % args.copy,
-                              file=sys.stderr)
-                        return 2
-                    source_label = "copy of %s" % source["name"]
-                    preset = {
-                        "name": target["name"],
-                        "preamp_left": source["preamp_left"],
-                        "preamp_right": source["preamp_right"],
-                        "enabled_left": source["enabled_left"],
-                        "enabled_right": source["enabled_right"],
-                        "bands_left": source["bands_left"],
-                        "bands_right": source["bands_right"],
-                    }
-                else:
-                    text = io.open(args.from_apo, encoding="utf-8",
-                                   errors="replace").read()
-                    bands = parse_apo_filters(text,
-                                              device=dev.info.get("product"))
-                    if not bands:
-                        print("error: no filters parsed from %s" % args.from_apo,
-                              file=sys.stderr)
-                        return 2
-                    preamp = parse_apo_preamp(text,
-                                              device=dev.info.get("product"))
-                    preamp = 0.0 if preamp is None else preamp
-                    base = args.from_apo.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
-                    source_label = "apo:%s" % base
-                    preset = {
-                        "name": target["name"],
-                        "preamp_left": preamp,
-                        "preamp_right": preamp,
-                        "enabled_left": True,
-                        "enabled_right": True,
-                        "bands_left": [b.as_dict() for b in bands],
-                        "bands_right": [b.as_dict() for b in bands],
-                    }
-
-                words = live_words(preset)
-                if args.backup and target["index"] < len(preset_blocks):
-                    with io.open(args.backup, "w", encoding="utf-8") as handle:
-                        json.dump({"index": target["index"],
-                                   "name": target["name"],
-                                   "words": preset_blocks[target["index"]]},
-                                  handle, indent=2)
-                        handle.write("\n")
-
-                if args.dry_run:
-                    report = {
-                        "slot": target["index"],
-                        "name": target["name"],
-                        "source": source_label,
-                        "commands": len(words),
-                        "dry_run": True,
-                        "backup": args.backup,
-                    }
-                    if as_json:
-                        print(json.dumps(report, indent=2, ensure_ascii=False))
-                    else:
-                        print("dry run: %d commands would go into slot %d (%s) "
-                              "from %s" % (len(words), target["index"],
-                                           target["name"], source_label))
-                        for cmd, value in words[:4]:
-                            print("  0x%04X = 0x%08X" % (cmd, value & 0xFFFFFFFF))
-                    return 0
-
-                if presets_equal(target, preset):
-                    report = {
-                        "slot": target["index"],
-                        "name": target["name"],
-                        "source": source_label,
-                        "changed": False,
-                        "written": False,
-                    }
-                    if as_json:
-                        print(json.dumps(report, indent=2, ensure_ascii=False))
-                    else:
-                        print("slot %d (%s) already matches %s; nothing written"
-                              % (target["index"], target["name"],
-                                 source_label))
-                    return 0
-
-                result = overwrite_preset(dev, target["index"], preset,
-                                          presets=presets,
-                                          blocks=preset_blocks)
-                report = {
-                    "slot": target["index"],
-                    "name": target["name"],
-                    "source": source_label,
-                    "bands": sum(1 for b in preset["bands_left"] if b["enabled"]),
-                    "preamp_left": preset["preamp_left"],
-                    "preamp_right": preset["preamp_right"],
-                    "changed": True,
-                    "verified": result["verified"],
-                    "switched": result["switched"],
-                    "commands": result["commands"],
-                }
-                if as_json:
-                    print(json.dumps(report, indent=2, ensure_ascii=False))
-                else:
-                    print("overwrote slot %d (%s) with %d bands from %s"
-                          % (target["index"], target["name"], report["bands"],
-                             source_label))
-                    print("  preamp %s" % format_preamp(preset["preamp_left"],
-                                                        preset["preamp_right"]))
-                    print("  verified: %s"
-                          % ("yes" if result["verified"] else
-                             "skipped" if result["verified"] is None else "no"))
-                    if result["switched"]:
-                        print("  note: the output switched to slot %d and back"
-                              % target["index"])
-                    if not args.backup:
-                        print("hint: use --backup to keep a copy before "
-                              "overwriting")
-                return 0 if result["verified"] is not False else 3
+            return handler(dev, args, presets, preset_blocks, as_json)
     except Dx5iiError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
+        return _fail(f"error: {exc}")
 
-    raise AssertionError(f"unhandled peq command {args.peq_command!r}")
+
 
 
 # ---------------------------------------------------------------------------
