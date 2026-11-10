@@ -217,6 +217,16 @@ class Dx5ii:
         self.last_read_state = session.state
         return collector
 
+    def read_frame(self, timeout_ms: int = 200) -> Optional[Frame]:
+        """Read and parse one frame, or return None when nothing arrives."""
+        buf = self._dev.read(64, timeout_ms)
+        if not buf:
+            return None
+        raw = bytes(buf)
+        if not any(raw):
+            return None
+        return parse_frame(raw)
+
     def read_for(self, ms: int, keep_raw: Optional[bool] = None) -> list[Frame]:
         """Collect parsed frames for ``ms`` milliseconds.
 

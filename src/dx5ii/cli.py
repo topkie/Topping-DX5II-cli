@@ -126,7 +126,18 @@ def build_parser() -> argparse.ArgumentParser:
                             "(factory reset, firmware update mode)")
 
     p_watch = sub.add_parser("watch", help="stream frames the device pushes")
-    p_watch.add_argument("seconds", nargs="?", type=int, default=3)
+    p_watch.add_argument("seconds", nargs="?", type=int, default=3,
+                         help="seconds to summarise (ignored with -f)")
+    p_watch.add_argument("-f", "--follow", action="store_true",
+                         help="print each frame as it arrives until Ctrl-C")
+    p_watch.add_argument("--cmd",
+                         help="only print frames with this command, e.g. 0x7137")
+    p_watch.add_argument("--all", action="store_true",
+                         help="include the 0x7130/0x7131 telemetry streams")
+    p_watch.add_argument("--timestamps", action="store_true",
+                         help="prefix each follow line with hh:mm:ss.mmm")
+    p_watch.add_argument("--json", action="store_true",
+                         help="print one JSON object per frame")
     p_watch.add_argument("--path")
 
     p_cfg = sub.add_parser("configs", help="list the EQ presets on the device")
@@ -281,10 +292,68 @@ def _cmd_raw(path: Optional[str], args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_watch(path: Optional[str], seconds: int) -> int:
-    with _open(path) as dev:
-        print(f"watching push frames for {seconds}s ...")
-        frames = dev.read_for(seconds * 1000)
+TELEMETRY_COMMANDS: Final = (0x7130, 0x7131)
+
+
+def _frame_line(frame: dict[str, Any], *, timestamps: bool, as_json: bool,
+                when: float) -> str:
+    if as_json:
+        return json.dumps({
+            "t": round(when, 3),
+            "cmd": "0x%04X" % frame["cmd"],
+            "protocol": "0x%02X" % frame["protocol"],
+            "total": frame["total"],
+            "cur": frame["index"],
+            "data": frame["data"],
+        })
+    body = "cmd=0x%04X pt=0x%02X total=%d cur=%d data=%d (0x%X)" % (
+        frame["cmd"], frame["protocol"], frame["total"], frame["index"],
+        frame["data"], frame["data"])
+    if not timestamps:
+        return body
+    stamp = time.strftime("%H:%M:%S", time.localtime(when))
+    return "%s.%03d  %s" % (stamp, int(when * 1000) % 1000, body)
+
+
+def _watch_loop(read_frame, write, *, cmd_filter: Optional[int] = None,
+                include_telemetry: bool = False, timestamps: bool = False,
+                as_json: bool = False, clock=time.time,
+                max_frames: Optional[int] = None) -> int:
+    """Print frames as they arrive.  Returns 0, including on Ctrl-C."""
+    shown = 0
+    try:
+        while max_frames is None or shown < max_frames:
+            frame = read_frame()
+            if frame is None:
+                continue
+            cmd = frame["cmd"]
+            if cmd_filter is not None and cmd != cmd_filter:
+                continue
+            if not include_telemetry and cmd in TELEMETRY_COMMANDS:
+                continue
+            write(_frame_line(frame, timestamps=timestamps, as_json=as_json,
+                              when=clock()))
+            shown += 1
+    except KeyboardInterrupt:
+        return 0
+    return 0
+
+
+def _cmd_watch(args: argparse.Namespace) -> int:
+    cmd_filter = int(args.cmd, 0) if args.cmd else None
+    with _open(args.path) as dev:
+        if args.follow:
+            return _watch_loop(
+                lambda: dev.read_frame(200),
+                lambda line: print(line, flush=True),
+                cmd_filter=cmd_filter,
+                include_telemetry=args.all,
+                timestamps=args.timestamps,
+                as_json=args.json,
+            )
+        print(f"watching push frames for {args.seconds}s ...")
+        frames = dev.read_for(args.seconds * 1000)
+
     counts: dict[tuple[int, int], int] = {}
     for frame in frames:
         key = (frame["cmd"], frame["protocol"])
@@ -544,7 +613,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
     if args.command == "raw":
         return _cmd_raw(args.path, args)
     if args.command == "watch":
-        return _cmd_watch(args.path, args.seconds)
+        return _cmd_watch(args)
     if args.command == "configs":
         return _cmd_configs(args.path, args.json)
     if args.command == "peq":
