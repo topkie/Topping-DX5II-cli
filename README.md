@@ -155,10 +155,12 @@ dx5ii peq delete MyPreset --switch Dynamic
 dx5ii peq preview MyPreset                      # audition it without storing it
 dx5ii peq preview --from-apo delta.txt           # audition a file, create nothing
 dx5ii peq preview --stop                         # go back to the stored slot
+dx5ii peq overwrite MyPreset --from-apo delta.txt   # replace a stored preset in place
+dx5ii peq overwrite MyPreset --copy Other --backup before.json
 ```
 
-`peq create` and `peq delete` only ever add or remove a preset. **There is no way to edit a band of
-an existing preset**: re-uploading the block overwrites it, and that is deliberate.
+`peq create` and `peq delete` only ever add or remove a preset. To change what a stored preset
+holds, use `peq overwrite` below; there is no per-band editor that leaves the rest alone.
 
 `peq preview` plays a preset from the unit's scratch filter set without storing it;
 `--from-apo` does the same for an Equalizer APO file, parsing it exactly like `peq create --from-apo`
@@ -169,6 +171,12 @@ inside a preview; one of them sent on its own does nothing. The stored slot is u
 marks it `L disabled`) keeps that bit in the preview, so the audition sounds the way the preset does. If the process dies before `--stop` the unit
 keeps playing the scratch set: `dx5ii --set-config <slot>` ends it, but the preview itself cannot
 be reopened afterwards.
+
+`peq overwrite` replaces a stored preset in place. `--from-apo FILE`, `--copy PRESET` or `--last`
+picks the content; the preset keeps its name. It clears an active preview first, because writes
+made during a preview land in the scratch set instead of the preset. When the target is not the
+playing slot, the output moves to it for the write and back afterwards. `--backup PATH` stores the
+current 78-word block before writing, `--dry-run` prints how many commands would be sent.
 
 `--from-apo` reads the `Device:` section named after the connected unit (the name `dx5ii --devices`
 prints); a file with no `Device:` line is taken as describing that one device. The device stores
@@ -279,7 +287,7 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-171 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+178 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
 interpretation, the multi-frame collector and read-session state machines, the write
 confirmation wait, the temporary preview handshake). No device needed.
 

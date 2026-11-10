@@ -33,7 +33,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 from .constants import (
     BAND_TYPE_IDS,
@@ -348,8 +348,50 @@ def encode_block(
     return words
 
 
+#: The four live-parameter commands that carry the preamp gain and the
+#: per-channel enable flag, in left/right order.
+PREAMP_COMMANDS: tuple[int, int, int, int] = (0x9C01, 0x9C02, 0x9C03, 0x9C04)
+
+
+def live_words(preset: dict[str, Any]) -> list[tuple[int, int]]:
+    """Build the 114 ``(cmd, data)`` writes that fill the device's live PEQ.
+
+    The device has a single filter set for playback.  Written without a
+    preview meta first, these commands change the playing preset in place;
+    written while ``peqPreviewState`` is active, they fill the scratch set
+    instead and nothing is stored.  Four preamp words come first, then eleven
+    bands of five words for each channel.
+    """
+    left = list(preset.get("bands_left") or [])
+    right = list(preset.get("bands_right") or [])
+    words = [
+        (PREAMP_COMMANDS[0], encode_preamp(preset.get("preamp_left") or 0.0)),
+        (PREAMP_COMMANDS[1], 1 if preset.get("enabled_left", True) else 0),
+        (PREAMP_COMMANDS[2], encode_preamp(preset.get("preamp_right") or 0.0)),
+        (PREAMP_COMMANDS[3], 1 if preset.get("enabled_right", True) else 0),
+    ]
+    for index in range(BANDS_PER_CHANNEL):
+        band_l = left[index] if index < len(left) else Band(enabled=False).as_dict()
+        band_r = right[index] if index < len(right) else Band(enabled=False).as_dict()
+        base = (0x9000 | ((index + 1) & 0xFF) << 8) & 0xFFFFFFFF
+        words.extend([
+            (base | 1, BAND_TYPE_IDS.get(band_l["type"], 1)),
+            (base | 2, int(round(band_l["freq_hz"]))),
+            (base | 3, int(round(10 * band_l["gain_db"])) & 0xFFFFFFFF),
+            (base | 4, int(round(10000 * band_l["q"]))),
+            (base | 5, 1 if band_l["enabled"] else 0),
+            (base | 6, BAND_TYPE_IDS.get(band_r["type"], 1)),
+            (base | 7, int(round(band_r["freq_hz"]))),
+            (base | 8, int(round(10 * band_r["gain_db"])) & 0xFFFFFFFF),
+            (base | 9, int(round(10000 * band_r["q"]))),
+            (base | 10, 1 if band_r["enabled"] else 0),
+        ])
+    return words
+
+
 __all__ = [
     "Band",
+    "PREAMP_COMMANDS",
     "SPARE_BAND",
     "SPARE_WORDS",
     "decode_band",
@@ -358,6 +400,7 @@ __all__ = [
     "encode_band",
     "encode_block",
     "encode_name_words",
+    "live_words",
     "parse_apo_filters",
     "parse_apo_preamp",
 ]

@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from dx5ii import preview as preview_module  # noqa: E402
 from dx5ii.constants import PT_WRITE  # noqa: E402
+from dx5ii.bands import live_words  # noqa: E402
 from dx5ii.preview import (  # noqa: E402
-    _band_words,
     _fnv1a,
     _meta,
     enter_preview,
@@ -71,7 +71,7 @@ class MetaTests(unittest.TestCase):
 
 class BandWordTests(unittest.TestCase):
     def test_one_preamp_and_eleven_stereo_bands(self):
-        words = list(_band_words(preset()))
+        words = list(live_words(preset()))
         self.assertEqual(len(words), 4 + 11 * 10)
         self.assertEqual(words[0][0], 0x9C01)
         self.assertEqual(words[1][0], 0x9C02)
@@ -80,7 +80,7 @@ class BandWordTests(unittest.TestCase):
         self.assertEqual(len(second), 10)
 
     def test_gain_is_written_in_tenths_of_a_db(self):
-        words = dict(_band_words(preset()))
+        words = dict(live_words(preset()))
         self.assertEqual(words[0x9103], (-25) & 0xFFFFFFFF)
 
 

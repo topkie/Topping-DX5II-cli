@@ -14,9 +14,12 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import sys
+import tempfile
 import textwrap
 import time
+from pathlib import Path
 from typing import Any, Optional, Sequence
 
 from .actions import apply_changes, state_summary
@@ -25,6 +28,7 @@ from .bands import (
     DEVICE_NAME_MAX_BYTES,
     Band,
     encode_preamp,
+    live_words,
     parse_apo_filters,
     parse_apo_preamp,
 )
@@ -53,6 +57,8 @@ from .peq import (
     create_preset,
     delete_preset,
     find_preset,
+    overwrite_preset,
+    read_preset_blocks,
     read_presets,
     rename_preset,
 )
@@ -219,6 +225,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_pren.add_argument("--json", action="store_true")
     p_pren.add_argument("--path")
     add_trace(p_pren)
+
+    p_pover = peq_sub.add_parser(
+        "overwrite", help="replace the contents of an existing preset")
+    p_pover.add_argument("preset", help="preset name or index to overwrite")
+    over_source = p_pover.add_mutually_exclusive_group(required=True)
+    over_source.add_argument("--copy", metavar="PRESET",
+                             help="take the bands of another stored preset")
+    over_source.add_argument("--from-apo", metavar="FILE",
+                             help="take the Filter lines of the section named "
+                                  "after this device in an Equalizer APO config")
+    over_source.add_argument("--last", action="store_true",
+                             help="reuse the content of the last peq preview")
+    p_pover.add_argument("--backup", metavar="PATH",
+                         help="write the current 78-word block here first")
+    p_pover.add_argument("--dry-run", action="store_true",
+                         help="print the command list without sending it")
+    p_pover.add_argument("--json", action="store_true")
+    p_pover.add_argument("--path")
+    add_trace(p_pover)
 
     return parser
 
@@ -459,6 +484,79 @@ def _used_bands(preset: dict[str, Any]) -> tuple[list[Band], list[Band]]:
     )
 
 
+def _state_dir() -> Path:
+    """Where the preview hand-off file lives.
+
+    ``~/.dx5ii`` is the intended place; some Windows profiles refuse to create
+    it, so the temp directory is used instead and the caller is told when even
+    that fails.  ``DX5II_STATE_DIR`` overrides both.
+    """
+    override = os.environ.get("DX5II_STATE_DIR")
+    if override:
+        directory = Path(override)
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory
+    candidates = [Path.home() / ".dx5ii"]
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        candidates.append(Path(local) / "dx5ii")
+    candidates.append(Path(tempfile.gettempdir()) / "dx5ii")
+    for directory in candidates:
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            return directory
+        except OSError:
+            continue
+    raise OSError("no writable state directory for the preview hand-off")
+
+
+def _last_preview_path() -> Path:
+    return _state_dir() / "last-preview.json"
+
+
+def _save_last_preview(preset: dict[str, Any]) -> bool:
+    """Remember what ``peq preview`` last played, for ``peq overwrite --last``."""
+    try:
+        path = _last_preview_path()
+        path.write_text(json.dumps(preset, ensure_ascii=False), encoding="utf-8")
+        return True
+    except OSError:
+        return False
+
+
+def _load_last_preview() -> Optional[dict[str, Any]]:
+    try:
+        return json.loads(_last_preview_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _preset_same(stored: dict[str, Any], wanted: dict[str, Any]) -> bool:
+    """True when writing ``wanted`` over ``stored`` would not change anything."""
+    for key in ("preamp_left", "preamp_right"):
+        if abs(float(stored.get(key) or 0.0) - float(wanted.get(key) or 0.0)) > 0.05:
+            return False
+    for channel in ("bands_left", "bands_right"):
+        have = stored.get(channel) or []
+        want = list(wanted.get(channel) or [])
+        for index in range(11):
+            mine = have[index]
+            theirs = want[index] if index < len(want) else {"enabled": False}
+            if bool(mine["enabled"]) != bool(theirs.get("enabled")):
+                return False
+            if not mine["enabled"]:
+                continue
+            if mine["type"] != theirs["type"]:
+                return False
+            if int(round(mine["freq_hz"])) != int(round(theirs["freq_hz"])):
+                return False
+            if round(mine["gain_db"], 1) != round(theirs["gain_db"], 1):
+                return False
+            if round(mine["q"], 4) != round(theirs["q"], 4):
+                return False
+    return True
+
+
 def _print_bands(preset: dict[str, Any], which: str) -> None:
     print("%s  (index %d%s)" % (preset["name"], preset["index"],
                                ", stored" if preset["stored_current"] else ""))
@@ -554,6 +652,9 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                         pass
                     raise
                 ok = bool(state.get("preview_active"))
+                if ok and not _save_last_preview(preset):
+                    print("warning: could not record this preview for --last",
+                          file=sys.stderr)
                 report = {
                     "preview_active": state.get("preview_active"),
                     "source": state.get("source_name"),
@@ -728,6 +829,122 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                           % (preset["name"], new_name,
                              "ok" if renamed else "not observed"))
                 return 0 if renamed else 3
+
+            if args.peq_command == "overwrite":
+                target = _resolve_preset(presets, args.preset)
+                if target is None:
+                    print("error: no preset %r" % args.preset, file=sys.stderr)
+                    return 2
+
+                if args.last:
+                    preset = _load_last_preview()
+                    if preset is None:
+                        print("error: nothing to reuse yet; run "
+                              "'dx5ii peq preview' first", file=sys.stderr)
+                        return 2
+                    source_label = "last preview (%s)" % preset.get("name")
+                elif args.copy:
+                    source = _resolve_preset(presets, args.copy)
+                    if source is None:
+                        print("error: no preset %r to copy" % args.copy,
+                              file=sys.stderr)
+                        return 2
+                    source_label = "copy of %s" % source["name"]
+                    preset = {
+                        "name": target["name"],
+                        "preamp_left": source["preamp_left"],
+                        "preamp_right": source["preamp_right"],
+                        "enabled_left": source["enabled_left"],
+                        "enabled_right": source["enabled_right"],
+                        "bands_left": source["bands_left"],
+                        "bands_right": source["bands_right"],
+                    }
+                else:
+                    text = io.open(args.from_apo, encoding="utf-8",
+                                   errors="replace").read()
+                    bands = parse_apo_filters(text,
+                                              device=dev.info.get("product"))
+                    if not bands:
+                        print("error: no filters parsed from %s" % args.from_apo,
+                              file=sys.stderr)
+                        return 2
+                    preamp = parse_apo_preamp(text,
+                                              device=dev.info.get("product"))
+                    preamp = 0.0 if preamp is None else preamp
+                    base = args.from_apo.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+                    source_label = "apo:%s" % base
+                    preset = {
+                        "name": target["name"],
+                        "preamp_left": preamp,
+                        "preamp_right": preamp,
+                        "enabled_left": True,
+                        "enabled_right": True,
+                        "bands_left": [b.as_dict() for b in bands],
+                        "bands_right": [b.as_dict() for b in bands],
+                    }
+
+                words = live_words(preset)
+                if args.backup:
+                    _now, blocks_now = read_preset_blocks(dev)
+                    if target["index"] < len(blocks_now):
+                        with io.open(args.backup, "w", encoding="utf-8") as handle:
+                            json.dump({"index": target["index"],
+                                       "name": target["name"],
+                                       "words": blocks_now[target["index"]]},
+                                      handle, indent=2)
+                            handle.write("\n")
+
+                if args.dry_run:
+                    report = {
+                        "slot": target["index"],
+                        "name": target["name"],
+                        "source": source_label,
+                        "commands": len(words),
+                        "dry_run": True,
+                        "backup": args.backup,
+                    }
+                    if as_json:
+                        print(json.dumps(report, indent=2, ensure_ascii=False))
+                    else:
+                        print("dry run: %d commands would go into slot %d (%s) "
+                              "from %s" % (len(words), target["index"],
+                                           target["name"], source_label))
+                        for cmd, value in words[:4]:
+                            print("  0x%04X = 0x%08X" % (cmd, value & 0xFFFFFFFF))
+                    return 0
+
+                changed = not _preset_same(target, preset)
+                result = overwrite_preset(dev, target["index"], preset)
+                report = {
+                    "slot": target["index"],
+                    "name": target["name"],
+                    "source": source_label,
+                    "bands": sum(1 for b in preset["bands_left"] if b["enabled"]),
+                    "preamp_left": preset["preamp_left"],
+                    "preamp_right": preset["preamp_right"],
+                    "changed": changed,
+                    "verified": result["verified"],
+                    "switched": result["switched"],
+                    "commands": result["commands"],
+                }
+                if as_json:
+                    print(json.dumps(report, indent=2, ensure_ascii=False))
+                else:
+                    print("overwrote slot %d (%s) with %d bands from %s"
+                          % (target["index"], target["name"], report["bands"],
+                             source_label))
+                    print("  preamp %s" % format_preamp(preset["preamp_left"],
+                                                        preset["preamp_right"]))
+                    print("  verified: %s"
+                          % ("yes" if result["verified"] else
+                             "skipped" if result["verified"] is None else "no"))
+                    if result["switched"]:
+                        print("  note: the output switched to slot %d and back"
+                              % target["index"])
+                    if not args.backup:
+                        print("hint: use --backup to keep a copy before "
+                              "overwriting")
+                return 0 if result["verified"] is not False else 3
     except Dx5iiError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
