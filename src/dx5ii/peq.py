@@ -50,15 +50,23 @@ __all__ = [
 
 
 def read_presets(dev: Any, settle_ms: int = 1600) -> dict[str, Any]:
-    """Read every preset with its EQ bands.
+    """Read every preset with its EQ bands."""
+    return read_preset_blocks(dev, settle_ms)[0]
 
-    The device only answers ``agreementConfig`` after a ``getSettings`` read,
-    so this always issues that first.
+
+def _read_settings_before_upload(dev: Any, settle_ms: int) -> None:
+    """Issue ``getSettings`` before the upload.
+
+    The device only answers ``agreementConfig`` after a settings read.  A real
+    device can stop at the 52nd frame instead of waiting out ``settle_ms``;
+    the fixed wait stays as the fallback for simpler stand-ins.
     """
+    reader = getattr(dev, "read_settings", None)
+    if reader is not None:
+        reader()
+        return
     dev.send(CMD_GET_SETTINGS, 0, PT_READ)
     dev.read_for(settle_ms)
-    frames = dev.read_config_upload()
-    return interpret_config_blocks(frames)
 
 
 def find_preset(presets: dict[str, Any], name: str) -> Optional[dict[str, Any]]:
@@ -147,8 +155,7 @@ def rename_preset(dev: Any, index: int, name: str, settle_ms: int = 200) -> None
 
 def read_preset_blocks(dev: Any, settle_ms: int = 1600) -> tuple[dict[str, Any], list[list[int]]]:
     """Read the presets twice over: decoded, and as the raw 78-word blocks."""
-    dev.send(CMD_GET_SETTINGS, 0, PT_READ)
-    dev.read_for(settle_ms)
+    _read_settings_before_upload(dev, settle_ms)
     frames = dev.read_config_upload()
     blocks: list[list[int]] = []
     for frame in frames:
