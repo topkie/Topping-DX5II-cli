@@ -3,7 +3,7 @@
 import json
 import unittest
 
-from dx5ii.cli import _frame_line, _watch_loop
+from dx5ii.cli import _follow_reader, _frame_line, _watch_loop
 
 
 def frame(cmd, data=0, total=1, cur=1, protocol=0x20):
@@ -59,12 +59,38 @@ class FollowTests(unittest.TestCase):
     def test_timestamps_prefix(self):
         out = self.collect([frame(0x7132)], timestamps=True)
         self.assertRegex(out[0], r"^\d\d:\d\d:\d\d\.250  cmd=0x7132")
-        self.assertIn("data=0 (0x0)", out[0])
+        self.assertIn("data=0x0 (0)", out[0])
 
     def test_single_frame_line_has_no_timestamp_by_default(self):
         out = self.collect([frame(0x1206, data=3)])
         self.assertTrue(out[0].startswith("cmd=0x1206"))
         self.assertIn("total=1 cur=1", out[0])
+
+
+class FollowReaderTests(unittest.TestCase):
+    def test_heartbeat_keeps_the_session_alive(self):
+        class Dev:
+            def __init__(self):
+                self.sent = []
+
+            def send(self, cmd, data, protocol, total, cur):
+                self.sent.append((cmd, data))
+
+            def read_frame(self, ms):
+                return None
+
+        dev = Dev()
+        now = [0.0]
+        read = _follow_reader(dev, interval=5.0, clock=lambda: now[0])
+        read()
+        now[0] = 4.9
+        read()
+        self.assertEqual(dev.sent, [])
+        now[0] = 5.1
+        read()
+        now[0] = 10.2
+        read()
+        self.assertEqual(dev.sent, [(0x7134, 1), (0x7134, 1)])
 
 
 class FrameLineTests(unittest.TestCase):
@@ -73,7 +99,7 @@ class FrameLineTests(unittest.TestCase):
                            timestamps=False, as_json=False, when=0.0)
         self.assertEqual(
             line, "cmd=0x7130 pt=0x20 total=2 cur=0 "
-                  "data=4293525483 (0xFFE9FFEB)")
+                  "data=0xFFE9FFEB (4293525483)")
 
 
 if __name__ == "__main__":

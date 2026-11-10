@@ -29,6 +29,8 @@ from .bands import (
     parse_apo_preamp,
 )
 from .constants import (
+    CMD_CONNECT_STATE,
+    CMD_HEARTBEAT,
     CMD_SWITCH_MCU_CONFIG,
     DESTRUCTIVE_COMMANDS,
     PT_READ,
@@ -306,7 +308,7 @@ def _frame_line(frame: dict[str, Any], *, timestamps: bool, as_json: bool,
             "cur": frame["index"],
             "data": frame["data"],
         })
-    body = "cmd=0x%04X pt=0x%02X total=%d cur=%d data=%d (0x%X)" % (
+    body = "cmd=0x%04X pt=0x%02X total=%d cur=%d data=0x%X (%d)" % (
         frame["cmd"], frame["protocol"], frame["total"], frame["index"],
         frame["data"], frame["data"])
     if not timestamps:
@@ -339,12 +341,28 @@ def _watch_loop(read_frame, write, *, cmd_filter: Optional[int] = None,
     return 0
 
 
+def _follow_reader(dev, interval: float = 5.0, clock=time.monotonic):
+    """Return a frame reader that renews the push session every ``interval``."""
+    last = clock()
+
+    def read():
+        nonlocal last
+        now = clock()
+        if now - last >= interval:
+            dev.send(CMD_HEARTBEAT, 1, PT_WRITE, 1, 1)
+            last = now
+        return dev.read_frame(200)
+
+    return read
+
+
 def _cmd_watch(args: argparse.Namespace) -> int:
     cmd_filter = int(args.cmd, 0) if args.cmd else None
     with _open(args.path) as dev:
+        dev.send(CMD_CONNECT_STATE, 2, PT_WRITE, 1, 1)
         if args.follow:
             return _watch_loop(
-                lambda: dev.read_frame(200),
+                _follow_reader(dev),
                 lambda line: print(line, flush=True),
                 cmd_filter=cmd_filter,
                 include_telemetry=args.all,

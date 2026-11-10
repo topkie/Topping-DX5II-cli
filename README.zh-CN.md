@@ -94,7 +94,7 @@ dx5ii set theme blue language en        # 一次写多个
 dx5ii raw 0x7137 --pt read              # 发一帧原始命令，打印回包
 dx5ii raw 0x710C --pt read --total 1    # 带 total/cur 的原始帧
 dx5ii watch 5                           # 监听 5 秒内设备主动推送的帧
-dx5ii watch -f                          # 持续输出新帧，Ctrl-C 退出
+dx5ii watch -f                          # 持续输出新帧，Ctrl-C 退出（会自己开启推送会话）
 dx5ii watch -f --cmd 0x7137 --json      # 每帧一行 JSON，便于管道处理
 ```
 

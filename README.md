@@ -106,7 +106,7 @@ dx5ii set theme blue language en        # write several at once
 dx5ii raw 0x7137 --pt read              # raw frame, print the reply
 dx5ii raw 0x710C --pt read --total 1    # raw frame with explicit total/cur
 dx5ii watch 5                           # dump unsolicited frames for 5 s
-dx5ii watch -f                          # follow new frames until Ctrl-C
+dx5ii watch -f                          # follow new frames until Ctrl-C (opens the push session)
 dx5ii watch -f --cmd 0x7137 --json      # one JSON object per matching frame
 ```
 

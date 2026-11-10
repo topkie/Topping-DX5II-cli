@@ -40,6 +40,9 @@ CMD_GET_SAMPLING: Final = 0x710F
 CMD_PEQ_PREVIEW: Final = 0x7137
 CMD_AGREEMENT_CONFIG: Final = 0x1120
 
+#: Starts the push session: the device reports vu/fft frames again.
+CMD_CONNECT_STATE: Final = 0x1101
+
 #: Reported inside the agreementConfig upload, not a standalone query.
 CMD_CURRENT_CONFIG: Final = 0x1206
 #: 78-word config block, one per EQ preset in the agreementConfig upload.
