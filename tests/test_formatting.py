@@ -138,7 +138,7 @@ class PrintBandsTests(unittest.TestCase):
         with redirect_stdout(out):
             _print_bands(self._preset([1.0], [1.0]), "both")
         rows = [line.strip() for line in out.getvalue().splitlines()]
-        self.assertTrue(any(r.startswith("L+R 1") for r in rows), rows)
+        self.assertTrue(any(r.startswith("Filter 1:") for r in rows), rows)
         self.assertFalse(any(r.startswith("R ") for r in rows), rows)
 
     def test_different_bands_print_two_rows(self) -> None:
@@ -148,8 +148,8 @@ class PrintBandsTests(unittest.TestCase):
         with redirect_stdout(out):
             _print_bands(self._preset([1.0], [-2.0]), "both")
         rows = [line.strip() for line in out.getvalue().splitlines()]
-        self.assertTrue(any(r.startswith("L ") for r in rows), rows)
-        self.assertTrue(any(r.startswith("R ") for r in rows), rows)
+        self.assertTrue(any(r.startswith("L Filter 1:") for r in rows), rows)
+        self.assertTrue(any(r.startswith("R Filter 1:") for r in rows), rows)
 
     def test_zero_gain_carries_no_sign(self) -> None:
         from dx5ii.cli import _print_bands
@@ -158,5 +158,5 @@ class PrintBandsTests(unittest.TestCase):
         with redirect_stdout(out):
             _print_bands(self._preset([0.0], [0.0]), "both")
         text = out.getvalue()
-        self.assertIn("Gain   0.0 dB", text)
+        self.assertIn("Gain 0.0 dB", text)
         self.assertNotIn("+0.0", text)

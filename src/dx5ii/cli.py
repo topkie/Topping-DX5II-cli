@@ -333,8 +333,16 @@ def _used_bands(preset: dict[str, Any]) -> tuple[list[Band], list[Band]]:
 def _print_bands(preset: dict[str, Any], which: str) -> None:
     print("%s  (index %d%s)" % (preset["name"], preset["index"],
                                ", stored" if preset["stored_current"] else ""))
-    print("  preamp %s" % format_preamp(preset["preamp_left"],
-                                        preset["preamp_right"]))
+    preamp_l = preset["preamp_left"]
+    preamp_r = preset["preamp_right"]
+    if preamp_l == preamp_r:
+        print("  Preamp: %s dB" % format_gain(preamp_l))
+    else:
+        if which in ("both", "l"):
+            print("  L Preamp: %s dB" % format_gain(preamp_l))
+        if which in ("both", "r"):
+            print("  R Preamp: %s dB" % format_gain(preamp_r))
+
     left = preset["bands_left"]
     right = preset["bands_right"]
     for i in range(max(len(left), len(right))):
@@ -345,14 +353,13 @@ def _print_bands(preset: dict[str, Any], which: str) -> None:
             continue
         rows = []
         if which in ("both", "l") and band_l is not None:
-            rows.append(("L+R" if band_l == band_r else "L", band_l))
+            rows.append(("" if band_l == band_r else "L ", band_l))
         if which in ("both", "r") and band_r is not None and band_r != band_l:
-            rows.append(("R", band_r))
-        for channel, band in rows:
-            kind = band["type"]
-            state = "ON " if band["enabled"] else "OFF"
-            print("  %-3s%2d  %s %-2s  Fc %7.1f Hz  Gain %5s dB  Q %.4f"
-                  % (channel, i + 1, state, kind, band["freq_hz"],
+            rows.append(("R ", band_r))
+        for prefix, band in rows:
+            print("  %sFilter %d: %s %s Fc %d Hz Gain %s dB Q %.4f"
+                  % (prefix, i + 1, "ON" if band["enabled"] else "OFF",
+                     band["type"], round(band["freq_hz"]),
                      format_gain(band["gain_db"]), band["q"]))
 
 
