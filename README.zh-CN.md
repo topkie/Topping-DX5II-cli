@@ -121,7 +121,7 @@ dx5ii configs                                    # 当前音源、存储槽位�
 dx5ii peq list                                   # 列出预设（设备存储的当前项标 ←）
 dx5ii peq show Dynamic                           # 打印左右声道每段的频点/增益/Q
 dx5ii peq create MyPreset --copy Dynamic         # 复制一份新预设（默认不激活）
-dx5ii peq create MyPreset --from-apo delta.txt   # 从 Equalizer APO 的 Filter 行导入
+dx5ii peq create MyPreset --from-apo delta.txt   # 导入 APO 配置里本机对应的 Device 段
 dx5ii peq create MyPreset --copy SPEAKER --activate
 dx5ii peq rename MyPreset Better                 # 改名，名字最多 14 字节
 dx5ii peq delete MyPreset --switch Dynamic       # 删除，并把激活项切到指定预设
@@ -129,6 +129,10 @@ dx5ii peq delete MyPreset --switch Dynamic       # 删除，并把激活项切�
 
 `peq create` / `peq delete` 只做新建与删除，**不提供修改已有预设每一段的手段**——设备协议里没有
 “改第 N 段”的单独命令，改一段就要整块重传，而重传等于覆盖，所以这里不做。
+
+`--from-apo` 只读 `Device:` 名与本机一致的那一段（名字就是 `dx5ii --devices` 打印的产品名）；
+文件里完全没有 `Device:` 行时，整份文件视为该设备。设备只存 PK、LS、HS 三类，所以 `HP`/`LP`
+行会让导入直接报错，不会跳过；一段超过 11 条也报错。没有任何静默丢弃。
 
 退出码：`0` 成功，`2` 设备/参数错误，`3` 写入后回读没变。
 

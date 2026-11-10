@@ -37,6 +37,7 @@ from .constants import (
     CONFIG_BLOCK_WORDS,
     CONFIG_HEAD_WORDS,
 )
+from .errors import Dx5iiError
 from .protocol import decode_name
 
 DEFAULT_Q = 0.707
@@ -116,35 +117,106 @@ def encode_band(band: Band) -> list[int]:
     ]
 
 
+_APO_DEVICE = re.compile(r"^Device\s*:\s*(?P<name>.+?)\s*$", re.IGNORECASE)
+_APO_FILTER_LINE = re.compile(r"^Filter\b", re.IGNORECASE)
 _APO_FILTER = re.compile(
-    r"^Filter\s+\d+\s*:\s*(ON|OFF)\s+(PK|LSC|HSC|LS|HS)\s+"
-    r"Fc\s+([0-9.]+)\s*Hz\s+Gain\s+([+-]?[0-9.]+)\s*dB(?:\s+Q\s+([0-9.]+))?",
+    r"^Filter(?:\s+\d+)?\s*:\s*(?P<state>ON|OFF)\s+(?P<kind>[A-Za-z]+)"
+    r"\s+Fc\s+(?P<freq>[0-9.]+)\s*Hz"
+    r"(?:\s+Gain\s+(?P<gain>[+-]?[0-9.]+)\s*dB)?"
+    r"(?:\s+Q\s+(?P<q>[0-9.]+))?",
     re.IGNORECASE,
 )
 _APO_KIND = {"PK": "PK", "LSC": "LS", "LS": "LS", "HSC": "HS", "HS": "HS"}
 
 
-def parse_apo_filters(text: str) -> list[Band]:
-    """Parse ``Filter N: ON PK Fc ... Hz Gain ... dB Q ...`` lines.
+def _apo_sections(text: str) -> list[tuple[str | None, list[str]]]:
+    """Group the ``Filter:`` lines of ``text`` under their ``Device:`` names."""
+    sections: list[tuple[str | None, list[str]]] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        device = _APO_DEVICE.match(line)
+        if device:
+            sections.append((device.group("name").strip(), []))
+            continue
+        if _APO_FILTER_LINE.match(line):
+            if not sections:
+                sections.append((None, []))
+            sections[-1][1].append(line)
+    return sections
+
+
+def _choose_section(
+    sections: list[tuple[str | None, list[str]]],
+    device: str | None,
+) -> tuple[str | None, list[str]]:
+    named = [(name, lines) for name, lines in sections if name is not None]
+    if not named:
+        # No ``Device:`` line at all: the file describes one device.
+        return sections[0] if sections else (None, [])
+    if device is not None:
+        wanted = device.strip().casefold()
+        hits = [entry for entry in named if entry[0].casefold() == wanted]
+        if not hits:
+            found = ", ".join(repr(name) for name, _ in named) or "none"
+            raise Dx5iiError(
+                "no 'Device: %s' section in the APO config (found: %s)"
+                % (device, found))
+        if len(hits) > 1:
+            raise Dx5iiError(
+                "the APO config has %d 'Device: %s' sections; keep only one"
+                % (len(hits), device))
+        return hits[0]
+    if len(named) > 1:
+        found = ", ".join(repr(name) for name, _ in named)
+        raise Dx5iiError(
+            "the APO config has %d Device sections (%s); pass device= to "
+            "pick one" % (len(named), found))
+    return named[0]
+
+
+def parse_apo_filters(text: str, device: str | None = None) -> list[Band]:
+    """Parse the ``Filter:`` lines of one ``Device:`` section.
+
+    Equalizer APO writes unnumbered lines (``Filter: ON PK Fc ...``); a
+    numbered ``Filter N:`` from an older export is accepted too.  Only the
+    section named ``device`` is read; a single unnamed section is used when
+    the file carries no ``Device:`` line.
+
+    Raises ``Dx5iiError`` when the requested section is missing, when the file
+    has several sections and none was named, when a line cannot be mapped to
+    one of the device's three band types, or when a section holds more bands
+    than the device stores.  Nothing is skipped silently.
 
     Shelf filters without an explicit ``Q`` fall back to the device default.
-    Unknown filter kinds are skipped rather than guessed.
     """
+    _, lines = _choose_section(_apo_sections(text), device)
     bands: list[Band] = []
-    for line in text.splitlines():
-        match = _APO_FILTER.match(line.strip())
+    for line in lines:
+        match = _APO_FILTER.match(line)
         if not match:
-            continue
-        state, kind, freq, gain, q = match.groups()
-        if kind.upper() not in _APO_KIND:
-            continue
+            raise Dx5iiError("unsupported APO filter line: %r" % line)
+        kind = match.group("kind").upper()
+        if kind not in _APO_KIND:
+            raise Dx5iiError(
+                "APO filter type %s cannot be stored on the device (only PK, "
+                "LS and HS exist): %r" % (kind, line))
+        gain = match.group("gain")
+        if gain is None:
+            raise Dx5iiError("APO filter line has no Gain: %r" % line)
+        q = match.group("q")
         bands.append(Band(
-            enabled=state.upper() == "ON",
-            type=_APO_KIND[kind.upper()],
+            enabled=match.group("state").upper() == "ON",
+            type=_APO_KIND[kind],
             gain_db=float(gain),
-            freq_hz=float(freq),
+            freq_hz=float(match.group("freq")),
             q=float(q) if q else DEFAULT_Q,
         ))
+    if len(bands) > BANDS_PER_CHANNEL:
+        raise Dx5iiError(
+            "the APO section has %d filters but the device stores %d per "
+            "channel" % (len(bands), BANDS_PER_CHANNEL))
     return bands
 
 

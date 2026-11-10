@@ -140,7 +140,8 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument("--copy", metavar="PRESET",
                         help="copy the bands of an existing preset")
     source.add_argument("--from-apo", metavar="FILE",
-                        help="read 'Filter N: ON PK Fc ...' lines from FILE")
+                        help="read the Filter lines of the section named after "
+                             "this device in an Equalizer APO config")
     p_pcreate.add_argument("--activate", action="store_true",
                            help="keep the new preset active (default: restore "
                                 "whatever was active before)")
@@ -393,7 +394,8 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                 else:
                     text = io.open(args.from_apo, encoding="utf-8",
                                    errors="replace").read()
-                    left = parse_apo_filters(text)
+                    left = parse_apo_filters(text,
+                                             device=dev.info.get("product"))
                     if not left:
                         print("error: no filters parsed from %s" % args.from_apo,
                               file=sys.stderr)

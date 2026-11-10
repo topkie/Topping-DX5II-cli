@@ -16,6 +16,7 @@ from dx5ii.bands import (
     encode_name_words,
     parse_apo_filters,
 )
+from dx5ii.errors import Dx5iiError
 
 
 class BandCodecTests(unittest.TestCase):
@@ -120,6 +121,82 @@ class ApoParserTests(unittest.TestCase):
 
     def test_ignores_noise(self) -> None:
         self.assertEqual(parse_apo_filters("Preamp: -6.0 dB\n"), [])
+
+
+class ApoDeviceSectionTests(unittest.TestCase):
+    """The real Equalizer APO shape: unnumbered lines, several Device sections."""
+
+    REAL = (
+        "# Equalizer APO - game delta\n"
+        "Device: mic\n"
+        "Preamp: -2 dB\n"
+        "Filter: ON HP Fc 90 Hz\n"
+        "Filter: ON PK Fc 130 Hz Gain -4 dB Q 5\n"
+        "Device: DX5 II\n"
+        "Preamp: -1.8 dB\n"
+        "Filter: ON PK Fc 79.0 Hz Gain -5.57 dB Q 1.30\n"
+        "Filter: ON LSC Fc 110.0 Hz Gain -5.0 dB Q 0.50\n"
+        "Filter: ON PK Fc 434.7 Hz Gain +1.95 dB Q 0.61\n"
+        "Filter: ON PK Fc 1707.0 Hz Gain -0.85 dB Q 0.68\n"
+        "Filter: ON PK Fc 4867.7 Hz Gain -4.62 dB Q 1.14\n"
+        "Filter: ON HSC Fc 10300.0 Hz Gain -6.00 dB Q 0.65\n"
+        "Filter: ON PK Fc 12247.0 Hz Gain -4.46 dB Q 2.57\n"
+    )
+
+    def test_unnumbered_lines_are_parsed(self) -> None:
+        text = (
+            "Filter: ON PK Fc 79.0 Hz Gain -5.57 dB Q 1.30\n"
+            "Filter: ON LSC Fc 110.0 Hz Gain -5.0 dB Q 0.50\n"
+        )
+        bands = parse_apo_filters(text)
+        self.assertEqual([b.type for b in bands], ["PK", "LS"])
+        self.assertAlmostEqual(bands[0].gain_db, -5.6)
+        self.assertAlmostEqual(bands[0].q, 1.30)
+
+    def test_reads_only_the_named_device(self) -> None:
+        bands = parse_apo_filters(self.REAL, device="DX5 II")
+        self.assertEqual(len(bands), 7)
+        self.assertAlmostEqual(bands[0].freq_hz, 79.0)
+        self.assertEqual(bands[1].type, "LS")
+        self.assertEqual(bands[5].type, "HS")
+        self.assertNotIn("HP", [b.type for b in bands])
+
+    def test_device_name_is_ignored_without_sections(self) -> None:
+        text = "Filter: ON PK Fc 100 Hz Gain 1 dB Q 1\n"
+        self.assertEqual(len(parse_apo_filters(text, device="DX5 II")), 1)
+
+    def test_single_named_section_needs_no_device(self) -> None:
+        text = "Device: DX5 II\nFilter: ON PK Fc 100 Hz Gain 1 dB Q 1\n"
+        self.assertEqual(len(parse_apo_filters(text)), 1)
+
+    def test_several_sections_without_device_raise(self) -> None:
+        with self.assertRaises(Dx5iiError) as caught:
+            parse_apo_filters(self.REAL)
+        self.assertIn("Device sections", str(caught.exception))
+
+    def test_missing_device_section_raises(self) -> None:
+        with self.assertRaises(Dx5iiError) as caught:
+            parse_apo_filters(self.REAL, device="DX7")
+        self.assertIn("no 'Device: DX7'", str(caught.exception))
+
+    def test_unmappable_filter_type_raises(self) -> None:
+        with self.assertRaises(Dx5iiError) as caught:
+            parse_apo_filters(self.REAL, device="mic")
+        self.assertIn("HP", str(caught.exception))
+
+    def test_missing_gain_raises(self) -> None:
+        with self.assertRaises(Dx5iiError) as caught:
+            parse_apo_filters("Filter: ON PK Fc 100 Hz Q 1\n")
+        self.assertIn("no Gain", str(caught.exception))
+
+    def test_too_many_bands_raise(self) -> None:
+        text = "".join(
+            "Filter: ON PK Fc %d Hz Gain 1 dB Q 1\n" % (100 + i)
+            for i in range(12)
+        )
+        with self.assertRaises(Dx5iiError) as caught:
+            parse_apo_filters(text)
+        self.assertIn("12 filters", str(caught.exception))
 
 
 if __name__ == "__main__":

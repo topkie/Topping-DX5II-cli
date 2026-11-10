@@ -138,7 +138,7 @@ dx5ii configs                                    # current source, stored slot a
 dx5ii peq list                                   # presets, stored one marked with ←
 dx5ii peq show Dynamic                           # per-band freq/gain/Q, both channels
 dx5ii peq create MyPreset --copy Dynamic         # duplicate (not activated by default)
-dx5ii peq create MyPreset --from-apo delta.txt   # import Equalizer APO "Filter:" lines
+dx5ii peq create MyPreset --from-apo delta.txt   # import one Device section of an APO config
 dx5ii peq create MyPreset --copy SPEAKER --activate
 dx5ii peq rename MyPreset Better                 # names are limited to 14 UTF-8 bytes
 dx5ii peq delete MyPreset --switch Dynamic
@@ -147,6 +147,11 @@ dx5ii peq delete MyPreset --switch Dynamic
 `peq create` and `peq delete` only ever add or remove a preset. **There is no way to edit a band of
 an existing preset**: the protocol has no per-band write command, and re-uploading the block
 overwrites it. That is deliberate.
+
+`--from-apo` reads the `Device:` section named after the connected unit (the name `dx5ii --devices`
+prints); a file with no `Device:` line is taken as describing that one device. The device stores
+only PK, LS and HS bands, so an `HP` or `LP` line stops the import with an error instead of being
+dropped, and more than 11 filters in one section is an error too. Nothing is imported silently.
 
 Exit codes: `0` OK, `2` device/argument error, `3` write not observed on read-back.
 
