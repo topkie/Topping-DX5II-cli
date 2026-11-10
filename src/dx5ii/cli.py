@@ -285,6 +285,25 @@ def _cmd_get(path: Optional[str], fields: Sequence[str], as_json: bool,
     return 0
 
 
+#: Fields whose command never echoes back; they get a short wait instead of
+#: the echo timeout. Both were measured on firmware 2.58.
+_SILENT_FIELDS = {"line-mode", "crossfeed-type"}
+_ECHO_TIMEOUT_MS = 300
+_SILENT_WAIT_S = 0.1
+
+
+def _encoded_words(name: str, value: Any, settings: Optional[dict[str, Any]]) -> Optional[list[int]]:
+    """Encode a field value to the words a write would send.
+
+    Comparing these instead of the display values makes the check insensitive
+    to how the device rounds or clamps: both sides go through the same encoder.
+    """
+    try:
+        return [frame[1] for frame in encode_field(name, value, settings)]
+    except Dx5iiError:
+        return None
+
+
 def _cmd_set(path: Optional[str], pairs: Sequence[str], as_json: bool,
              trace: Optional[str] = None) -> int:
     if len(pairs) % 2 != 0:
@@ -293,27 +312,62 @@ def _cmd_set(path: Optional[str], pairs: Sequence[str], as_json: bool,
 
     with _open(path, trace) as dev:
         before = dev.snapshot(include_configs=False)
-        results: list[dict[str, Any]] = []
+
+        # Encode everything first: a bad value must not leave the device with
+        # half of the batch already written.
+        encoded: list[tuple[str, str, list[tuple[int, int, int, int]]]] = []
         for name, value in items:
-            for cmd, data, total, cur in encode_field(name, value, before["settings"]):
+            encoded.append((name, value, list(encode_field(name, value, before["settings"]))))
+
+        echoes: dict[str, bool] = {}
+        for name, value, commands in encoded:
+            for cmd, data, total, cur in commands:
                 dev.send(cmd, data, PT_WRITE, total, cur)
-            time.sleep(0.35)
-            results.append({"field": name, "requested": value})
+            if name in _SILENT_FIELDS or len(commands) > 1:
+                # A multi-frame field has no single frame to wait for, and
+                # these two commands never answer.
+                time.sleep(_SILENT_WAIT_S)
+                echoes[name] = name not in _SILENT_FIELDS
+            else:
+                echoes[name] = dev.wait_for_frame(
+                    commands[0][0], None, timeout_ms=_ECHO_TIMEOUT_MS)
+
         time.sleep(0.25)
         after = dev.snapshot(include_configs=False)
 
+    results: list[dict[str, Any]] = []
     ok = True
-    for item in results:
-        name = item["field"]
-        item["from"] = field_state(before, name)
-        item["observed"] = field_state(after, name)
-        if isinstance(item["from"], str) or isinstance(item["observed"], str):
-            item["from_raw"] = field_raw(before, name)
-            item["observed_raw"] = field_raw(after, name)
-        item["changed"] = item["from"] != item["observed"]
-        if not item["changed"] and name not in FIELD_ACTIONS:
+    for name, value, commands in encoded:
+        requested_words = _encoded_words(name, value, after.get("settings"))
+        observed_words = _encoded_words(name, field_state(after, name),
+                                        after.get("settings"))
+        state_before = field_state(before, name)
+        state_after = field_state(after, name)
+        raw_before = field_raw(before, name)
+        raw_after = field_raw(after, name)
+        changed = state_before != state_after
+        confirmed = (None if requested_words is None or observed_words is None
+                     else requested_words == observed_words)
+        item: dict[str, Any] = {
+            "field": name,
+            "requested": value,
+            "from": state_before,
+            "observed": state_after,
+            "changed": changed,
+            "echo": echoes.get(name),
+            "confirmed": confirmed,
+        }
+        if isinstance(state_before, str) or isinstance(state_after, str):
+            item["from_raw"] = raw_before
+            item["observed_raw"] = raw_after
+        if not changed and name not in FIELD_ACTIONS:
             ok = False
             item["note"] = "read-back unchanged"
+        elif confirmed is False and name not in FIELD_ACTIONS:
+            # The device answered but stored something else, usually because
+            # it clamps or rounds the value; report it rather than hide it.
+            item["note"] = "device stored %r" % (state_after,)
+        results.append(item)
 
     report = {
         "ok": ok,
@@ -328,9 +382,15 @@ def _cmd_set(path: Optional[str], pairs: Sequence[str], as_json: bool,
             name = item["field"]
             if name in FIELD_ACTIONS:
                 print(f"{name:<20} sent")
-            else:
-                note = "" if item["changed"] else "   (unchanged)"
-                print(f"{name:<20} {item['from']} -> {item['observed']}{note}")
+                continue
+            note = ""
+            if not item["changed"]:
+                note = "   (unchanged)"
+            elif item.get("note"):
+                note = "   (%s)" % item["note"]
+            elif item["echo"] is False:
+                note = "   (no echo)"
+            print(f"{name:<20} {item['from']} -> {item['observed']}{note}")
     return 0 if ok else 3
 
 
