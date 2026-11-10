@@ -22,9 +22,8 @@ def _configs(source: str, slot_index=None, slot_name=None) -> dict:
         "stored_name": "IER-M7.Harman",
         "count": 2,
         "slots": [
-            {"index": 1, "name": "Dynamic", "hash": 0x016A77C4, "stored_current": False},
-            {"index": 2, "name": "IER-M7.Harman", "hash": 0x01009B95,
-             "stored_current": True},
+            {"index": 1, "name": "Dynamic", "stored_current": False},
+            {"index": 2, "name": "IER-M7.Harman", "stored_current": True},
         ],
     }
 

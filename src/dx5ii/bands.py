@@ -299,7 +299,6 @@ def decode_block(words: Sequence[int]) -> dict:
         "enabled": bool(words[4]),
         "preamp_left": decode_preamp(words[5]),
         "preamp_right": decode_preamp(words[7]),
-        "hash": words[5],
         "bands_left": decode_bands(words, 0),
         "bands_right": decode_bands(words, 1),
     }

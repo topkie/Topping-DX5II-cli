@@ -271,7 +271,6 @@ def interpret_config_upload(frames: Iterable[Frame]) -> dict[str, Any]:
         {
             "index": i,
             "name": decode_name(words[0:4]),
-            "hash": words[5],
             "preamp_left": decode_preamp(words[5]),
             "preamp_right": decode_preamp(words[7]),
             "stored_current": i == stored,
@@ -297,7 +296,6 @@ def interpret_config_blocks(frames: Iterable[Frame]) -> dict[str, Any]:
         presets.append({
             "index": i,
             "name": block["name"],
-            "hash": block["hash"],
             "enabled": block["enabled"],
             "preamp_left": block["preamp_left"],
             "preamp_right": block["preamp_right"],
