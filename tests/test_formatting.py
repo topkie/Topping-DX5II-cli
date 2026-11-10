@@ -105,3 +105,59 @@ class PrintSwitchReportTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreampTextTests(unittest.TestCase):
+    def test_identical_sides_collapse(self) -> None:
+        from dx5ii.formatting import format_preamp
+
+        self.assertEqual(format_preamp(0.0, 0.0), "L+R 0.0 dB")
+        self.assertEqual(format_preamp(-6.0, -6.0), "L+R -6.0 dB")
+
+    def test_different_sides_stay_separate(self) -> None:
+        from dx5ii.formatting import format_preamp
+
+        self.assertEqual(format_preamp(-6.0, -3.0), "L -6.0  R -3.0 dB")
+
+
+class PrintBandsTests(unittest.TestCase):
+    def _preset(self, left, right, preamp=(0.0, 0.0)) -> dict:
+        def band(gain):
+            return {"enabled": True, "type": "PK", "gain_db": gain,
+                    "freq_hz": 100.0, "q": 1.0}
+        return {
+            "name": "T", "index": 0, "stored_current": False,
+            "preamp_left": preamp[0], "preamp_right": preamp[1],
+            "bands_left": [band(g) for g in left],
+            "bands_right": [band(g) for g in right],
+        }
+
+    def test_equal_bands_collapse_to_one_row(self) -> None:
+        from dx5ii.cli import _print_bands
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            _print_bands(self._preset([1.0], [1.0]), "both")
+        rows = [line.strip() for line in out.getvalue().splitlines()]
+        self.assertTrue(any(r.startswith("L+R 1") for r in rows), rows)
+        self.assertFalse(any(r.startswith("R ") for r in rows), rows)
+
+    def test_different_bands_print_two_rows(self) -> None:
+        from dx5ii.cli import _print_bands
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            _print_bands(self._preset([1.0], [-2.0]), "both")
+        rows = [line.strip() for line in out.getvalue().splitlines()]
+        self.assertTrue(any(r.startswith("L ") for r in rows), rows)
+        self.assertTrue(any(r.startswith("R ") for r in rows), rows)
+
+    def test_zero_gain_carries_no_sign(self) -> None:
+        from dx5ii.cli import _print_bands
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            _print_bands(self._preset([0.0], [0.0]), "both")
+        text = out.getvalue()
+        self.assertIn("Gain   0.0 dB", text)
+        self.assertNotIn("+0.0", text)

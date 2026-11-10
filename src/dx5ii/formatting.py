@@ -182,9 +182,25 @@ def print_field_rows(rows: Iterable[tuple[str, Any]]) -> None:
         print(f"{name:<20} {format_value(name, value)}")
 
 
+def format_gain(value: float) -> str:
+    """Signed gain text at 0.1 dB; zero is printed without a sign."""
+    if value == 0:
+        return "0.0"
+    return "%+.1f" % value
+
+
+def format_preamp(left: float, right: float) -> str:
+    """Render a stereo preamp pair, collapsing it when both sides match."""
+    if left == right:
+        return "L+R %s dB" % format_gain(left)
+    return "L %s  R %s dB" % (format_gain(left), format_gain(right))
+
+
 __all__ = [
     "BOOL_TEXT",
     "SNAPSHOT_GROUPS",
+    "format_gain",
+    "format_preamp",
     "format_value",
     "print_configs",
     "print_snapshot",

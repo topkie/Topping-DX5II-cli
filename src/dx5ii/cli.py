@@ -38,6 +38,8 @@ from .device import Dx5ii, list_interfaces
 from .errors import Dx5iiError
 from .fields import FIELD_ACTIONS, FIELD_SPECS, encode_field, field_raw, field_state
 from .formatting import (
+    format_gain,
+    format_preamp,
     print_configs,
     print_field_rows,
     print_snapshot,
@@ -331,19 +333,27 @@ def _used_bands(preset: dict[str, Any]) -> tuple[list[Band], list[Band]]:
 def _print_bands(preset: dict[str, Any], which: str) -> None:
     print("%s  (index %d%s)" % (preset["name"], preset["index"],
                                ", stored" if preset["stored_current"] else ""))
-    print("  preamp L %+0.1f dB  R %+0.1f dB"
-          % (preset["preamp_left"], preset["preamp_right"]))
-    for channel, key in (("L", "bands_left"), ("R", "bands_right")):
-        if which not in ("both", channel.lower()):
+    print("  preamp %s" % format_preamp(preset["preamp_left"],
+                                        preset["preamp_right"]))
+    left = preset["bands_left"]
+    right = preset["bands_right"]
+    for i in range(max(len(left), len(right))):
+        band_l = left[i] if i < len(left) else None
+        band_r = right[i] if i < len(right) else None
+        if i >= 10 and not (band_l and band_l["enabled"]) and not (
+                band_r and band_r["enabled"]):
             continue
-        for i, band in enumerate(preset[key]):
-            if not band["enabled"] and i >= 10:
-                continue
+        rows = []
+        if which in ("both", "l") and band_l is not None:
+            rows.append(("L+R" if band_l == band_r else "L", band_l))
+        if which in ("both", "r") and band_r is not None and band_r != band_l:
+            rows.append(("R", band_r))
+        for channel, band in rows:
             kind = band["type"]
             state = "ON " if band["enabled"] else "OFF"
-            print("  %s%2d  %s %-2s  Fc %7.1f Hz  Gain %+5.1f dB  Q %.4f"
+            print("  %-3s%2d  %s %-2s  Fc %7.1f Hz  Gain %5s dB  Q %.4f"
                   % (channel, i + 1, state, kind, band["freq_hz"],
-                     band["gain_db"], band["q"]))
+                     format_gain(band["gain_db"]), band["q"]))
 
 
 def _cmd_peq(args: argparse.Namespace) -> int:
@@ -365,10 +375,10 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                 for preset in presets["presets"]:
                     used = sum(1 for b in preset["bands_left"] if b["enabled"])
                     mark = "<- stored" if preset["stored_current"] else ""
-                    print("  %d  %-24s %2d bands  preamp L%+0.1f R%+0.1f %s"
+                    print("  %d  %-24s %2d bands  preamp %s %s"
                           % (preset["index"], preset["name"], used,
-                             preset["preamp_left"],
-                             preset["preamp_right"], mark))
+                             format_preamp(preset["preamp_left"],
+                                           preset["preamp_right"]), mark))
                 return 0
 
             if args.peq_command == "show":
