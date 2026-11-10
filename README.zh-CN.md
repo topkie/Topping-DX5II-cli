@@ -127,10 +127,17 @@ dx5ii peq create MyPreset --from-apo delta.txt   # 导入 APO 配置里本机对
 dx5ii peq create MyPreset --copy SPEAKER --activate
 dx5ii peq rename MyPreset Better                 # 改名，名字最多 14 字节
 dx5ii peq delete MyPreset --switch Dynamic       # 删除，并把激活项切到指定预设
+dx5ii peq preview MyPreset                       # 临时试听，不写进预设
+dx5ii peq preview --stop                         # 回到设备存储的槽位
 ```
 
-`peq create` / `peq delete` 只做新建与删除，**不提供修改已有预设每一段的手段**——设备协议里没有
-“改第 N 段”的单独命令，改一段就要整块重传，而重传等于覆盖，所以这里不做。
+`peq create` / `peq delete` 只做新建与删除，**不提供修改已有预设每一段的手段**——改一段就要整块
+重传，而重传等于覆盖，所以这里不做。
+
+`peq preview` 用设备的临时滤波器组试听一个预设，不写进存储的槽位。各段通过逐段实时参数命令
+（`0x9101`–`0x9B0A`）写入，设备只在预览上下文里接受它们——单发一条不起作用。存储的槽位不受影响，
+`--stop` 把预览状态写回未激活。若进程在 `--stop` 之前结束，设备会继续播放临时组：
+`dx5ii --set-config <槽位>` 能结束它，但预览本身之后无法再打开。
 
 `--from-apo` 只读 `Device:` 名与本机一致的那一段（名字就是 `dx5ii --devices` 打印的产品名）；
 文件里完全没有 `Device:` 行时，整份文件视为该设备。设备存 PK、LP、HP、LS、HS 五类，其它类型
@@ -231,7 +238,7 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 python -m unittest discover -s tests -t tests -v
 ```
 
-151 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机、写确认帧等待），不需要设备。
+158 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机、写确认帧等待、临时预览握手），不需要设备。
 
 ## 许可证
 

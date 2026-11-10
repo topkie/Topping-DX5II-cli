@@ -144,11 +144,19 @@ dx5ii peq create MyPreset --from-apo delta.txt   # import one Device section of 
 dx5ii peq create MyPreset --copy SPEAKER --activate
 dx5ii peq rename MyPreset Better                 # names are limited to 14 UTF-8 bytes
 dx5ii peq delete MyPreset --switch Dynamic
+dx5ii peq preview MyPreset                      # audition it without storing it
+dx5ii peq preview --stop                         # go back to the stored slot
 ```
 
 `peq create` and `peq delete` only ever add or remove a preset. **There is no way to edit a band of
-an existing preset**: the protocol has no per-band write command, and re-uploading the block
-overwrites it. That is deliberate.
+an existing preset**: re-uploading the block overwrites it, and that is deliberate.
+
+`peq preview` plays a preset from the unit's scratch filter set without storing it. The bands go
+through the per-band live-parameter commands (`0x9101`-`0x9B0A`), which the device only accepts
+inside a preview; one of them sent on its own does nothing. The stored slot is untouched, and
+`--stop` writes the preview meta back to inactive. If the process dies before `--stop` the unit
+keeps playing the scratch set: `dx5ii --set-config <slot>` ends it, but the preview itself cannot
+be reopened afterwards.
 
 `--from-apo` reads the `Device:` section named after the connected unit (the name `dx5ii --devices`
 prints); a file with no `Device:` line is taken as describing that one device. The device stores
@@ -259,9 +267,9 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-151 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+158 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
 interpretation, the multi-frame collector and read-session state machines, the write
-confirmation wait). No device needed.
+confirmation wait, the temporary preview handshake). No device needed.
 
 ## License
 

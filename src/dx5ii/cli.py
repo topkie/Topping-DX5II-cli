@@ -48,6 +48,7 @@ from .formatting import (
     print_switch_report,
 )
 from . import __version__
+from .preview import enter_preview, leave_preview, preview_state
 from .peq import (
     create_preset,
     delete_preset,
@@ -176,6 +177,14 @@ def build_parser() -> argparse.ArgumentParser:
                         help="preset to activate after deletion")
     p_pdel.add_argument("--json", action="store_true")
     p_pdel.add_argument("--path")
+
+    p_pprev = peq_sub.add_parser(
+        "preview", help="play a preset from the scratch set without storing it")
+    p_pprev.add_argument("preset", nargs="?", help="preset name or index")
+    p_pprev.add_argument("--stop", action="store_true",
+                         help="leave the preview and return to the stored preset")
+    p_pprev.add_argument("--json", action="store_true")
+    p_pprev.add_argument("--path")
 
     p_pren = peq_sub.add_parser("rename", help="rename a preset")
     p_pren.add_argument("preset", help="preset name or index")
@@ -457,6 +466,43 @@ def _cmd_peq(args: argparse.Namespace) -> int:
     try:
         with _open(path) as dev:
             presets = read_presets(dev)
+
+            if args.peq_command == "preview":
+                if args.stop:
+                    state = leave_preview(dev)
+                    if as_json:
+                        print(json.dumps(state, indent=2, ensure_ascii=False))
+                    else:
+                        print("preview stopped; back to slot %s (%s)"
+                              % (presets.get("stored_index"),
+                                 presets.get("stored_name")))
+                    return 0 if not state.get("preview_active") else 3
+
+                if not args.preset:
+                    print("error: name a preset to preview, or pass --stop",
+                          file=sys.stderr)
+                    return 2
+                preset = _resolve_preset(presets, args.preset)
+                if preset is None:
+                    print("error: no preset %r" % args.preset, file=sys.stderr)
+                    return 2
+                state = enter_preview(dev, preset)
+                ok = bool(state.get("preview_active"))
+                report = {
+                    "preview_active": state.get("preview_active"),
+                    "source": state.get("source_name"),
+                    "preset": preset["name"],
+                    "stored_index": presets.get("stored_index"),
+                    "stored_name": presets.get("stored_name"),
+                }
+                if as_json:
+                    print(json.dumps(report, indent=2, ensure_ascii=False))
+                else:
+                    print("previewing %r (audition); the stored slot %s (%s) is "
+                          "untouched" % (preset["name"], report["stored_index"],
+                                         report["stored_name"]))
+                    print("run 'dx5ii peq preview --stop' to go back")
+                return 0 if ok else 3
 
             if args.peq_command == "list":
                 if as_json:
