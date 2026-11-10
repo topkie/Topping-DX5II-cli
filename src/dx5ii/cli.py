@@ -65,10 +65,10 @@ def _open(path: Optional[str] = None, trace: Optional[str] = None) -> Dx5ii:
 
 def _epilog() -> str:
     fields = textwrap.fill(
-        ", ".join(FIELD_SPECS), width=74,
+        ", ".join(FIELD_SPECS), width=74, break_on_hyphens=False,
         initial_indent="    ", subsequent_indent="    ")
     actions = textwrap.fill(
-        ", ".join(FIELD_ACTIONS), width=74,
+        ", ".join(FIELD_ACTIONS), width=74, break_on_hyphens=False,
         initial_indent="    ", subsequent_indent="    ")
     return (
         "fields (%d)\n%s\n\n"
@@ -117,12 +117,17 @@ def build_parser() -> argparse.ArgumentParser:
         target.add_argument("--path", help="explicit HID path (interface 2)")
         add_trace(target)
 
-    p_get = sub.add_parser("get", help="print current state")
+    p_get = sub.add_parser("get", help="print current state",
+                           description="Print named fields. The field list "
+                                       "is at the bottom of `dx5ii --help`.")
     p_get.add_argument("fields", nargs="*", metavar="field",
                        help="field names (default: all)")
     add_common(p_get)
 
-    p_set = sub.add_parser("set", help="write one or more fields, then read back")
+    p_set = sub.add_parser("set", help="write one or more fields, then read back",
+                           description="Write fields, then read them back. The "
+                                       "field list is at the bottom of "
+                                       "`dx5ii --help`.")
     p_set.add_argument("pairs", nargs="+", metavar="field value")
     add_common(p_set)
 
@@ -159,7 +164,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_cfg = sub.add_parser("configs", help="list the EQ presets on the device")
     add_common(p_cfg)
 
-    p_peq = sub.add_parser("peq", help="manage EQ presets")
+    p_peq = sub.add_parser(
+        "peq", help="manage EQ presets",
+        description="Manage preset contents. The PEQ on/off switch is the "
+                    "`peq` field: `dx5ii set peq on` / `dx5ii set peq off`.")
     peq_sub = p_peq.add_subparsers(dest="peq_command", required=True)
 
     p_plist = peq_sub.add_parser("list", help="list presets with band counts")
@@ -183,6 +191,7 @@ def build_parser() -> argparse.ArgumentParser:
                                 "whatever was active before)")
     p_pcreate.add_argument("--json", action="store_true")
     p_pcreate.add_argument("--path")
+    add_trace(p_pcreate)
 
     p_pdel = peq_sub.add_parser("delete", help="delete a preset")
     p_pdel.add_argument("preset", help="preset name or index")
@@ -190,6 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="preset to activate after deletion")
     p_pdel.add_argument("--json", action="store_true")
     p_pdel.add_argument("--path")
+    add_trace(p_pdel)
 
     p_pprev = peq_sub.add_parser(
         "preview", help="play a preset from the scratch set without storing it")
@@ -201,12 +211,14 @@ def build_parser() -> argparse.ArgumentParser:
                          help="leave the preview and return to the stored preset")
     p_pprev.add_argument("--json", action="store_true")
     p_pprev.add_argument("--path")
+    add_trace(p_pprev)
 
     p_pren = peq_sub.add_parser("rename", help="rename a preset")
     p_pren.add_argument("preset", help="preset name or index")
     p_pren.add_argument("new_name")
     p_pren.add_argument("--json", action="store_true")
     p_pren.add_argument("--path")
+    add_trace(p_pren)
 
     return parser
 
