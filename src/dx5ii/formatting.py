@@ -192,8 +192,8 @@ def format_gain(value: float) -> str:
 def format_preamp(left: float, right: float) -> str:
     """Render a stereo preamp pair, collapsing it when both sides match."""
     if left == right:
-        return "L+R %s dB" % format_gain(left)
-    return "L %s  R %s dB" % (format_gain(left), format_gain(right))
+        return "L+R %4s dB" % format_gain(left)
+    return "L %4s  R %4s dB" % (format_gain(left), format_gain(right))
 
 
 __all__ = [

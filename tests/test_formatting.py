@@ -110,7 +110,7 @@ class PreampTextTests(unittest.TestCase):
     def test_identical_sides_collapse(self) -> None:
         from dx5ii.formatting import format_preamp
 
-        self.assertEqual(format_preamp(0.0, 0.0), "L+R 0.0 dB")
+        self.assertEqual(format_preamp(0.0, 0.0), "L+R  0.0 dB")
         self.assertEqual(format_preamp(-6.0, -6.0), "L+R -6.0 dB")
 
     def test_different_sides_stay_separate(self) -> None:
