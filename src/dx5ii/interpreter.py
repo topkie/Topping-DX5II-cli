@@ -303,6 +303,8 @@ def interpret_config_blocks(frames: Iterable[Frame]) -> dict[str, Any]:
         })
     return {
         "stored_index": stored,
+        "stored_name": (presets[stored]["name"]
+                        if 0 <= stored < len(presets) else None),
         "count": len(presets),
         "presets": presets,
     }

@@ -76,7 +76,7 @@ BAND_WORDS: Final = 3
 CMD_PEQ_BAND_BASE: Final = 0x9000
 
 #: Band type ids as stored in the config block.
-BAND_TYPES: Final = {1: "PK", 3: "?", 4: "LS", 5: "HS"}
+BAND_TYPES: Final = {1: "PK", 2: "LP", 3: "HP", 4: "LS", 5: "HS"}
 BAND_TYPE_IDS: Final = {v: k for k, v in BAND_TYPES.items() if v != "?"}
 
 # ---------------------------------------------------------------------------

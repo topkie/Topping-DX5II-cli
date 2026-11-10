@@ -180,9 +180,19 @@ class ApoDeviceSectionTests(unittest.TestCase):
         self.assertIn("no 'Device: DX7'", str(caught.exception))
 
     def test_unmappable_filter_type_raises(self) -> None:
+        text = "Filter: ON BP Fc 100 Hz Gain 1 dB Q 1\n"
         with self.assertRaises(Dx5iiError) as caught:
-            parse_apo_filters(self.REAL, device="mic")
-        self.assertIn("HP", str(caught.exception))
+            parse_apo_filters(text)
+        self.assertIn("BP", str(caught.exception))
+
+    def test_lowpass_and_highpass_are_stored(self) -> None:
+        text = (
+            "Filter: ON LP Fc 632 Hz Gain 0.0 dB Q 0.707\n"
+            "Filter: ON HP Fc 632 Hz Gain 0.0 dB Q 0.707\n"
+        )
+        bands = parse_apo_filters(text)
+        self.assertEqual([b.type for b in bands], ["LP", "HP"])
+        self.assertEqual([encode_band(b)[0] >> 8 & 0xFF for b in bands], [2, 3])
 
     def test_missing_gain_raises(self) -> None:
         with self.assertRaises(Dx5iiError) as caught:

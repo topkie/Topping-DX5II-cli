@@ -349,8 +349,10 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                 if as_json:
                     print(json.dumps(presets, indent=2, ensure_ascii=False))
                     return 0
-                print("stored=%s count=%s"
-                      % (presets.get("stored_index"), presets.get("count")))
+                print("stored=%s (%s) count=%s"
+                      % (presets.get("stored_index"),
+                         presets.get("stored_name"),
+                         presets.get("count")))
                 for preset in presets["presets"]:
                     used = sum(1 for b in preset["bands_left"] if b["enabled"])
                     mark = "<- stored" if preset["stored_current"] else ""

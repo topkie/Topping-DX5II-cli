@@ -156,6 +156,18 @@ class ConfigUploadTests(unittest.TestCase):
         self.assertEqual(out["slots"][0]["name"], "Warm")
         self.assertEqual(out["stored_name"], "Warm")
 
+    def test_blocks_report_the_stored_name(self) -> None:
+        from dx5ii.interpreter import interpret_config_blocks
+
+        frames = [frame(0x1206, 1)]
+        frames += self._block([0x6D726157], 0)          # "Warm"
+        frames += self._block([0x616E7944, 0x0063696D], 0)  # "Dynamic"
+        out = interpret_config_blocks(frames)
+
+        self.assertEqual(out["stored_index"], 1)
+        self.assertEqual(out["stored_name"], "Dynamic")
+        self.assertEqual(out["presets"][0]["name"], "Warm")
+
 
 class PeqSourceNameTests(unittest.TestCase):
     """The source byte, named the way Topping Home names it."""

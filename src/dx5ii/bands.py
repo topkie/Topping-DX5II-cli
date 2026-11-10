@@ -79,7 +79,8 @@ class Band:
 
     def to_ap_filter(self, index: int) -> str:
         """Render as an Equalizer APO line (``PK``/``LSC``/``HSC``)."""
-        kind = {"PK": "PK", "LS": "LSC", "HS": "HSC"}.get(self.type, "PK")
+        kind = {"PK": "PK", "LS": "LSC", "HS": "HSC",
+                "LP": "LP", "HP": "HP"}.get(self.type, "PK")
         state = "ON" if self.enabled else "OFF"
         return (
             f"Filter {index}: {state} {kind} Fc {self.freq_hz:g} Hz "
@@ -126,7 +127,8 @@ _APO_FILTER = re.compile(
     r"(?:\s+Q\s+(?P<q>[0-9.]+))?",
     re.IGNORECASE,
 )
-_APO_KIND = {"PK": "PK", "LSC": "LS", "LS": "LS", "HSC": "HS", "HS": "HS"}
+_APO_KIND = {"PK": "PK", "LSC": "LS", "LS": "LS", "HSC": "HS", "HS": "HS",
+             "LP": "LP", "HP": "HP"}
 
 
 def _apo_sections(text: str) -> list[tuple[str | None, list[str]]]:
@@ -186,7 +188,7 @@ def parse_apo_filters(text: str, device: str | None = None) -> list[Band]:
 
     Raises ``Dx5iiError`` when the requested section is missing, when the file
     has several sections and none was named, when a line cannot be mapped to
-    one of the device's three band types, or when a section holds more bands
+    one of the device's band types, or when a section holds more bands
     than the device stores.  Nothing is skipped silently.
 
     Shelf filters without an explicit ``Q`` fall back to the device default.
@@ -200,8 +202,8 @@ def parse_apo_filters(text: str, device: str | None = None) -> list[Band]:
         kind = match.group("kind").upper()
         if kind not in _APO_KIND:
             raise Dx5iiError(
-                "APO filter type %s cannot be stored on the device (only PK, "
-                "LS and HS exist): %r" % (kind, line))
+                "APO filter type %s cannot be stored on the device (PK, LP, "
+                "HP, LS and HS exist): %r" % (kind, line))
         gain = match.group("gain")
         if gain is None:
             raise Dx5iiError("APO filter line has no Gain: %r" % line)
