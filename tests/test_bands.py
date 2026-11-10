@@ -197,6 +197,12 @@ class ApoDeviceSectionTests(unittest.TestCase):
         self.assertEqual([b.type for b in bands], ["LP", "HP"])
         self.assertEqual([encode_band(b)[0] >> 8 & 0xFF for b in bands], [2, 3])
 
+    def test_pass_filters_need_no_gain(self) -> None:
+        text = "Filter: ON HP Fc 90 Hz\nFilter: ON LP Fc 16000 Hz\n"
+        bands = parse_apo_filters(text)
+        self.assertEqual([b.type for b in bands], ["HP", "LP"])
+        self.assertEqual([b.gain_db for b in bands], [0.0, 0.0])
+
     def test_missing_gain_raises(self) -> None:
         with self.assertRaises(Dx5iiError) as caught:
             parse_apo_filters("Filter: ON PK Fc 100 Hz Q 1\n")

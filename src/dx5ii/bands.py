@@ -217,6 +217,8 @@ def parse_apo_filters(text: str, device: str | None = None) -> list[Band]:
     than the device stores.  Nothing is skipped silently.
 
     Shelf filters without an explicit ``Q`` fall back to the device default.
+    ``LP`` / ``HP`` lines carry no gain in Equalizer APO and are written as
+    0 dB; every other type needs an explicit ``Gain``.
     """
     _, lines = _choose_section(_apo_sections(text), device)
     bands: list[Band] = []
@@ -233,7 +235,11 @@ def parse_apo_filters(text: str, device: str | None = None) -> list[Band]:
                 "HP, LS and HS exist): %r" % (kind, line))
         gain = match.group("gain")
         if gain is None:
-            raise Dx5iiError("APO filter line has no Gain: %r" % line)
+            # Equalizer APO writes pass filters without a gain field:
+            # ``Filter: ON HP Fc 90 Hz``.  Everything else needs one.
+            if _APO_KIND[kind] not in ("LP", "HP"):
+                raise Dx5iiError("APO filter line has no Gain: %r" % line)
+            gain = "0"
         q = match.group("q")
         bands.append(Band(
             enabled=match.group("state").upper() == "ON",
