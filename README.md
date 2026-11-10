@@ -178,6 +178,11 @@ made during a preview land in the scratch set instead of the preset. When the ta
 playing slot, the output moves to it for the write and back afterwards. `--backup PATH` stores the
 current 78-word block before writing, `--dry-run` prints how many commands would be sent.
 
+The preview hand-off used by `--last` lives in `~/.dx5ii/last-preview.json`
+(`%LOCALAPPDATA%\\dx5ii\\last-preview.json` or the system temp directory when neither is
+writable). It holds only the last previewed config. `pip uninstall dx5ii-cli` does not remove it,
+so delete that file by hand if you want it gone.
+
 `--from-apo` reads the `Device:` section named after the connected unit (the name `dx5ii --devices`
 prints); a file with no `Device:` line is taken as describing that one device. The device stores
 PK, LP, HP, LS and HS bands; any other type (`BP`, `NE`, ...) stops the import with an error

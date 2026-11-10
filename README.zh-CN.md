@@ -149,6 +149,10 @@ dx5ii peq overwrite MyPreset --copy Other --backup before.json
 目标不是当前播放的槽位时，输出会临时切过去，写完切回。`--backup PATH` 在写入前保存当前的
 78 字块，`--dry-run` 只打印要发多少条命令。
 
+`--last` 依赖的交接文件在 `~/.dx5ii/last-preview.json`（不可写时依次退到
+`%LOCALAPPDATA%\\dx5ii\\last-preview.json` 与系统临时目录）。文件里只有上一次试听的配置。
+`pip uninstall dx5ii-cli` 不会删它，需要的话手动删掉那个文件即可。
+
 `--from-apo` 只读 `Device:` 名与本机一致的那一段（名字就是 `dx5ii --devices` 打印的产品名）；
 文件里完全没有 `Device:` 行时，整份文件视为该设备。设备存 PK、LP、HP、LS、HS 五类，其它类型
 （`BP`、`NE` 等）会让导入直接报错，不会跳过；APO 的 `HP`/`LP` 行没有 `Gain` 字段，按 0 dB 导入；一段超过 11 条也报错。`Preamp:` 行会写进预设的前级增益（−12…+12 dB）。没有任何静默丢弃。

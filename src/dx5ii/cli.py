@@ -58,6 +58,7 @@ from .peq import (
     delete_preset,
     find_preset,
     overwrite_preset,
+    presets_equal,
     read_preset_blocks,
     read_presets,
     rename_preset,
@@ -484,24 +485,23 @@ def _used_bands(preset: dict[str, Any]) -> tuple[list[Band], list[Band]]:
     )
 
 
-def _state_dir() -> Path:
-    """Where the preview hand-off file lives.
-
-    ``~/.dx5ii`` is the intended place; some Windows profiles refuse to create
-    it, so the temp directory is used instead and the caller is told when even
-    that fails.  ``DX5II_STATE_DIR`` overrides both.
-    """
+def _state_candidates() -> list[Path]:
+    """Ordered places the preview hand-off may live."""
+    candidates: list[Path] = []
     override = os.environ.get("DX5II_STATE_DIR")
     if override:
-        directory = Path(override)
-        directory.mkdir(parents=True, exist_ok=True)
-        return directory
-    candidates = [Path.home() / ".dx5ii"]
+        candidates.append(Path(override))
+    candidates.append(Path.home() / ".dx5ii")
     local = os.environ.get("LOCALAPPDATA")
     if local:
         candidates.append(Path(local) / "dx5ii")
     candidates.append(Path(tempfile.gettempdir()) / "dx5ii")
-    for directory in candidates:
+    return candidates
+
+
+def _state_dir() -> Path:
+    """First writable place for the hand-off file; creates it if needed."""
+    for directory in _state_candidates():
         try:
             directory.mkdir(parents=True, exist_ok=True)
             return directory
@@ -525,36 +525,14 @@ def _save_last_preview(preset: dict[str, Any]) -> bool:
 
 
 def _load_last_preview() -> Optional[dict[str, Any]]:
-    try:
-        return json.loads(_last_preview_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
-        return None
-
-
-def _preset_same(stored: dict[str, Any], wanted: dict[str, Any]) -> bool:
-    """True when writing ``wanted`` over ``stored`` would not change anything."""
-    for key in ("preamp_left", "preamp_right"):
-        if abs(float(stored.get(key) or 0.0) - float(wanted.get(key) or 0.0)) > 0.05:
-            return False
-    for channel in ("bands_left", "bands_right"):
-        have = stored.get(channel) or []
-        want = list(wanted.get(channel) or [])
-        for index in range(11):
-            mine = have[index]
-            theirs = want[index] if index < len(want) else {"enabled": False}
-            if bool(mine["enabled"]) != bool(theirs.get("enabled")):
-                return False
-            if not mine["enabled"]:
-                continue
-            if mine["type"] != theirs["type"]:
-                return False
-            if int(round(mine["freq_hz"])) != int(round(theirs["freq_hz"])):
-                return False
-            if round(mine["gain_db"], 1) != round(theirs["gain_db"], 1):
-                return False
-            if round(mine["q"], 4) != round(theirs["q"], 4):
-                return False
-    return True
+    """Read the hand-off file without creating any directory."""
+    for directory in _state_candidates():
+        try:
+            return json.loads(
+                (directory / "last-preview.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            continue
+    return None
 
 
 def _print_bands(preset: dict[str, Any], which: str) -> None:
@@ -598,7 +576,7 @@ def _cmd_peq(args: argparse.Namespace) -> int:
 
     try:
         with _open(path, args.trace) as dev:
-            presets = read_presets(dev)
+            presets, preset_blocks = read_preset_blocks(dev)
 
             if args.peq_command == "preview":
                 if args.stop:
@@ -884,15 +862,13 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                     }
 
                 words = live_words(preset)
-                if args.backup:
-                    _now, blocks_now = read_preset_blocks(dev)
-                    if target["index"] < len(blocks_now):
-                        with io.open(args.backup, "w", encoding="utf-8") as handle:
-                            json.dump({"index": target["index"],
-                                       "name": target["name"],
-                                       "words": blocks_now[target["index"]]},
-                                      handle, indent=2)
-                            handle.write("\n")
+                if args.backup and target["index"] < len(preset_blocks):
+                    with io.open(args.backup, "w", encoding="utf-8") as handle:
+                        json.dump({"index": target["index"],
+                                   "name": target["name"],
+                                   "words": preset_blocks[target["index"]]},
+                                  handle, indent=2)
+                        handle.write("\n")
 
                 if args.dry_run:
                     report = {
@@ -913,8 +889,25 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                             print("  0x%04X = 0x%08X" % (cmd, value & 0xFFFFFFFF))
                     return 0
 
-                changed = not _preset_same(target, preset)
-                result = overwrite_preset(dev, target["index"], preset)
+                if presets_equal(target, preset):
+                    report = {
+                        "slot": target["index"],
+                        "name": target["name"],
+                        "source": source_label,
+                        "changed": False,
+                        "written": False,
+                    }
+                    if as_json:
+                        print(json.dumps(report, indent=2, ensure_ascii=False))
+                    else:
+                        print("slot %d (%s) already matches %s; nothing written"
+                              % (target["index"], target["name"],
+                                 source_label))
+                    return 0
+
+                result = overwrite_preset(dev, target["index"], preset,
+                                          presets=presets,
+                                          blocks=preset_blocks)
                 report = {
                     "slot": target["index"],
                     "name": target["name"],
@@ -922,7 +915,7 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                     "bands": sum(1 for b in preset["bands_left"] if b["enabled"]),
                     "preamp_left": preset["preamp_left"],
                     "preamp_right": preset["preamp_right"],
-                    "changed": changed,
+                    "changed": True,
                     "verified": result["verified"],
                     "switched": result["switched"],
                     "commands": result["commands"],

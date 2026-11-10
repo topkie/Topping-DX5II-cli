@@ -41,6 +41,7 @@ __all__ = [
     "create_preset",
     "delete_preset",
     "overwrite_preset",
+    "presets_equal",
     "read_preset_blocks",
     "rename_preset",
     "read_presets",
@@ -159,30 +160,41 @@ def read_preset_blocks(dev: Any, settle_ms: int = 1600) -> tuple[dict[str, Any],
     return interpret_config_blocks(frames), blocks
 
 
-def _preset_matches(decoded: dict[str, Any], wanted: dict[str, Any]) -> bool:
-    """Compare a read-back preset with what was meant to be written."""
+def presets_equal(left: dict[str, Any], right: dict[str, Any],
+                  tolerance: float = 0.1) -> bool:
+    """True when two preset payloads describe the same EQ.
+
+    Accepts both decoded presets (bands as :class:`Band`) and plain dicts.
+    Preamp values are compared with ``tolerance`` because the device stores
+    them as a 25-bit fixed point value and the web page uses a lookup table.
+    """
     for key in ("preamp_left", "preamp_right"):
-        if abs(float(decoded.get(key) or 0.0) - float(wanted.get(key) or 0.0)) > 0.1:
+        if abs(float(left.get(key) or 0.0) - float(right.get(key) or 0.0)) > tolerance:
+            return False
+    for key in ("enabled_left", "enabled_right"):
+        if bool(left.get(key, True)) != bool(right.get(key, True)):
             return False
     for channel in ("bands_left", "bands_right"):
-        got = decoded.get(channel) or []
-        want = list(wanted.get(channel) or [])
+        have = left.get(channel) or []
+        want = right.get(channel) or []
         for index in range(BANDS_PER_CHANNEL):
-            target = want[index] if index < len(want) else Band(enabled=False).as_dict()
-            actual = got[index]
-            if hasattr(actual, "as_dict"):
-                actual = actual.as_dict()
-            if hasattr(target, "as_dict"):
-                target = target.as_dict()
-            if bool(actual["enabled"]) != bool(target["enabled"]):
+            mine = have[index] if index < len(have) else Band(enabled=False)
+            theirs = want[index] if index < len(want) else Band(enabled=False)
+            if hasattr(mine, "as_dict"):
+                mine = mine.as_dict()
+            if hasattr(theirs, "as_dict"):
+                theirs = theirs.as_dict()
+            if not mine.get("enabled") and not theirs.get("enabled"):
+                continue
+            if bool(mine.get("enabled")) != bool(theirs.get("enabled")):
                 return False
-            if int(round(actual["freq_hz"])) != int(round(target["freq_hz"])):
+            if mine["type"] != theirs["type"]:
                 return False
-            if round(float(actual["gain_db"]), 1) != round(float(target["gain_db"]), 1):
+            if int(round(mine["freq_hz"])) != int(round(theirs["freq_hz"])):
                 return False
-            if round(float(actual["q"]), 4) != round(float(target["q"]), 4):
+            if round(float(mine["gain_db"]), 1) != round(float(theirs["gain_db"]), 1):
                 return False
-            if target["enabled"] and actual["type"] != target["type"]:
+            if round(float(mine["q"]), 4) != round(float(theirs["q"]), 4):
                 return False
     return True
 
@@ -193,6 +205,8 @@ def overwrite_preset(
     preset: dict[str, Any],
     verify: bool = True,
     settle_ms: int = 300,
+    presets: Optional[dict[str, Any]] = None,
+    blocks: Optional[list[list[int]]] = None,
 ) -> dict[str, Any]:
     """Write ``preset`` in place over the stored preset at ``index``.
 
@@ -201,7 +215,8 @@ def overwrite_preset(
     preview is cleared first, the target slot is selected when it is not the
     playing one, and the previous slot is restored afterwards.
     """
-    presets, blocks = read_preset_blocks(dev)
+    if presets is None or blocks is None:
+        presets, blocks = read_preset_blocks(dev)
     if not 0 <= int(index) < len(blocks):
         raise Dx5iiError("no preset at index %d" % int(index))
 
@@ -222,7 +237,7 @@ def overwrite_preset(
     verified: Optional[bool] = None
     if verify:
         _after, after_blocks = read_preset_blocks(dev)
-        verified = _preset_matches(decode_block(after_blocks[int(index)]), preset)
+        verified = presets_equal(decode_block(after_blocks[int(index)]), preset)
 
     if switched:
         dev.send(CMD_SWITCH_MCU_CONFIG, int(current), PT_WRITE)
