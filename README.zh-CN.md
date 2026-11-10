@@ -128,13 +128,14 @@ dx5ii peq create MyPreset --copy SPEAKER --activate
 dx5ii peq rename MyPreset Better                 # 改名，名字最多 14 字节
 dx5ii peq delete MyPreset --switch Dynamic       # 删除，并把激活项切到指定预设
 dx5ii peq preview MyPreset                       # 临时试听，不写进预设
+dx5ii peq preview --from-apo delta.txt            # 试听一个 APO 文件，不建预设
 dx5ii peq preview --stop                         # 回到设备存储的槽位
 ```
 
 `peq create` / `peq delete` 只做新建与删除，**不提供修改已有预设每一段的手段**——改一段就要整块
 重传，而重传等于覆盖，所以这里不做。
 
-`peq preview` 用设备的临时滤波器组试听一个预设，不写进存储的槽位。各段通过逐段实时参数命令
+`peq preview` 用设备的临时滤波器组试听一个预设，不写进存储的槽位；`--from-apo` 对 Equalizer APO 文件做同样的事，解析规则与 `peq create --from-apo` 相同，但不建预设。各段通过逐段实时参数命令
 （`0x9101`–`0x9B0A`）写入，设备只在预览上下文里接受它们——单发一条不起作用。存储的槽位不受影响，
 `--stop` 把预览状态写回未激活。预设若禁用了某个声道（`peq list` 标 `L disabled`），试听也照这个启用位写，听起来与预设本身一致。若进程在 `--stop` 之前结束，设备会继续播放临时组：
 `dx5ii --set-config <槽位>` 能结束它，但预览本身之后无法再打开。

@@ -145,13 +145,16 @@ dx5ii peq create MyPreset --copy SPEAKER --activate
 dx5ii peq rename MyPreset Better                 # names are limited to 14 UTF-8 bytes
 dx5ii peq delete MyPreset --switch Dynamic
 dx5ii peq preview MyPreset                      # audition it without storing it
+dx5ii peq preview --from-apo delta.txt           # audition a file, create nothing
 dx5ii peq preview --stop                         # go back to the stored slot
 ```
 
 `peq create` and `peq delete` only ever add or remove a preset. **There is no way to edit a band of
 an existing preset**: re-uploading the block overwrites it, and that is deliberate.
 
-`peq preview` plays a preset from the unit's scratch filter set without storing it. The bands go
+`peq preview` plays a preset from the unit's scratch filter set without storing it;
+`--from-apo` does the same for an Equalizer APO file, parsing it exactly like `peq create --from-apo`
+but creating no preset. The bands go
 through the per-band live-parameter commands (`0x9101`-`0x9B0A`), which the device only accepts
 inside a preview; one of them sent on its own does nothing. The stored slot is untouched, and
 `--stop` writes the preview meta back to inactive. A preset whose left channel is disabled (`peq list`

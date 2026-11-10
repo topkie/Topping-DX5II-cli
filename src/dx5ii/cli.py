@@ -181,6 +181,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_pprev = peq_sub.add_parser(
         "preview", help="play a preset from the scratch set without storing it")
     p_pprev.add_argument("preset", nargs="?", help="preset name or index")
+    p_pprev.add_argument("--from-apo", metavar="FILE",
+                         help="audition an Equalizer APO config instead of a "
+                              "stored preset (nothing is created)")
     p_pprev.add_argument("--stop", action="store_true",
                          help="leave the preview and return to the stored preset")
     p_pprev.add_argument("--json", action="store_true")
@@ -480,13 +483,35 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                                  presets.get("stored_name")))
                     return 0 if not state.get("preview_active") else 3
 
-                if not args.preset:
-                    print("error: name a preset to preview, or pass --stop",
-                          file=sys.stderr)
-                    return 2
-                preset = _resolve_preset(presets, args.preset)
-                if preset is None:
-                    print("error: no preset %r" % args.preset, file=sys.stderr)
+                if args.from_apo:
+                    text = io.open(args.from_apo, encoding="utf-8",
+                                   errors="replace").read()
+                    bands = parse_apo_filters(
+                        text, device=dev.info.get("product"))
+                    if not bands:
+                        print("error: no filters parsed from %s"
+                              % args.from_apo, file=sys.stderr)
+                        return 2
+                    preamp = parse_apo_preamp(
+                        text, device=dev.info.get("product")) or 0.0
+                    preset = {
+                        "name": args.from_apo.rsplit("/", 1)[-1].rsplit("\\", 1)[-1],
+                        "preamp_left": preamp,
+                        "preamp_right": preamp,
+                        "enabled_left": True,
+                        "enabled_right": True,
+                        "bands_left": [b.as_dict() for b in bands],
+                        "bands_right": [b.as_dict() for b in bands],
+                    }
+                elif args.preset:
+                    preset = _resolve_preset(presets, args.preset)
+                    if preset is None:
+                        print("error: no preset %r" % args.preset,
+                              file=sys.stderr)
+                        return 2
+                else:
+                    print("error: name a preset to preview, pass --from-apo, "
+                          "or pass --stop", file=sys.stderr)
                     return 2
                 state = enter_preview(dev, preset)
                 ok = bool(state.get("preview_active"))
@@ -494,15 +519,17 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                     "preview_active": state.get("preview_active"),
                     "source": state.get("source_name"),
                     "preset": preset["name"],
+                    "bands": len(preset.get("bands_left") or []),
                     "stored_index": presets.get("stored_index"),
                     "stored_name": presets.get("stored_name"),
                 }
                 if as_json:
                     print(json.dumps(report, indent=2, ensure_ascii=False))
                 else:
-                    print("previewing %r (audition); the stored slot %s (%s) is "
-                          "untouched" % (preset["name"], report["stored_index"],
-                                         report["stored_name"]))
+                    print("previewing %r (audition, %d bands); the stored slot "
+                          "%s (%s) is untouched"
+                          % (preset["name"], report["bands"],
+                             report["stored_index"], report["stored_name"]))
                     print("run 'dx5ii peq preview --stop' to go back")
                 return 0 if ok else 3
 
