@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/dx5ii-cli.svg)](https://pypi.org/project/dx5ii-cli/)
 [![Python](https://img.shields.io/pypi/pyversions/dx5ii-cli.svg)](https://pypi.org/project/dx5ii-cli/)
-[![CI](https://github.com/topkie/dx5ii-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/topkie/dx5ii-cli/actions/workflows/ci.yml)
+[![CI](https://github.com/topkie/Topping-DX5II-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/topkie/Topping-DX5II-cli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
