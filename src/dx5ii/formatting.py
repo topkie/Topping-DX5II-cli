@@ -112,6 +112,15 @@ def print_snapshot(snap: dict[str, Any]) -> None:
           % (device.get("product"), device.get("serial"),
              device.get("interface_number"), device.get("firmware") or "?"))
 
+    identity = snap.get("identity")
+    if identity:
+        _print_rows("identity", [
+            ("hardware_version", identity.get("hardware_version")),
+            ("software_version", identity.get("software_version")),
+            ("device_id", identity.get("device_id")),
+            ("serial_number", identity.get("serial_number")),
+        ])
+
     settings = snap.get("settings")
     if not settings:
         print("settings : <no reply>")

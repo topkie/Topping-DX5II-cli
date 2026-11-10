@@ -13,8 +13,12 @@ from .constants import (
     AUTO_SCREEN_TIMEOUT_RAW,
     CMD_CONFIG_BLOCK,
     CMD_CURRENT_CONFIG,
+    CMD_DEVICE_ID,
     CMD_GET_SAMPLING,
+    CMD_HARDWARE_VERSION,
     CMD_PEQ_PREVIEW,
+    CMD_SERIAL_NUMBER,
+    CMD_SOFTWARE_VERSION,
     DEVICE_NAME_WORDS,
     INPUTS,
     OUTPUTS,
@@ -140,6 +144,48 @@ def interpret_sampling(frames: Iterable[Frame]) -> Optional[dict[str, Any]]:
             fmt = "DSD" if rate > 768000 else "PCM"
         return {"code": code, "sample_rate": rate, "format": fmt}
     return None
+
+
+def format_version(raw: int) -> str:
+    """``0x0258`` -> ``V2.58``, the way Topping Home renders it."""
+    return "V%d.%02X" % ((raw >> 8) & 0xFF, raw & 0xFF)
+
+
+def decode_serial(words: Sequence[int]) -> Optional[str]:
+    """Unpack the ``serialNumber`` words into its ASCII text."""
+    if not words:
+        return None
+    raw = b"".join((w & 0xFFFFFFFF).to_bytes(4, "little") for w in words)
+    text = raw.split(b"\x00", 1)[0].decode("ascii", "replace").strip()
+    return text or None
+
+
+def interpret_identity(frames: Iterable[Frame]) -> dict[str, Any]:
+    """Decode the four identity replies: versions, device id and serial.
+
+    Every field stays ``None`` when its reply is missing, so a dropped frame
+    never turns into a made-up version string.
+    """
+    out: dict[str, Any] = {
+        "hardware_version": None,
+        "software_version": None,
+        "device_id": None,
+        "serial_number": None,
+    }
+    serial: list[tuple[int, int]] = []
+    for frame in frames:
+        cmd = frame["cmd"]
+        if cmd == CMD_HARDWARE_VERSION:
+            out["hardware_version"] = format_version(frame["data"])
+        elif cmd == CMD_SOFTWARE_VERSION:
+            out["software_version"] = format_version(frame["data"])
+        elif cmd == CMD_DEVICE_ID:
+            out["device_id"] = "0x%08X" % frame["data"]
+        elif cmd == CMD_SERIAL_NUMBER:
+            serial.append((frame["index"], frame["data"]))
+    if serial:
+        out["serial_number"] = decode_serial([w for _, w in sorted(serial)])
+    return out
 
 
 def interpret_peq_preview(frames: Iterable[Frame]) -> Optional[dict[str, Any]]:
@@ -316,6 +362,9 @@ __all__ = [
     "collect_words",
     "interpret_settings",
     "interpret_sampling",
+    "format_version",
+    "decode_serial",
+    "interpret_identity",
     "interpret_peq_preview",
     "resolve_playing",
     "interpret_config_upload",

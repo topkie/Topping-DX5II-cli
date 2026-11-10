@@ -165,7 +165,7 @@ Exit codes: `0` OK, `2` device/argument error, `3` write not observed on read-ba
 from dx5ii import Dx5ii, apply_changes
 
 with Dx5ii() as dev:
-    state = dev.snapshot()                 # device/settings/sampling/peq/configs/pushed
+    state = dev.snapshot()                 # device/settings/identity/sampling/peq/configs/pushed
     print(state["settings"]["volume_db"])
 
     dev.set_output("hp_balanced")          # returns the settings after the switch
@@ -175,7 +175,7 @@ with Dx5ii() as dev:                       # switch both at once, keep a rollbac
     snap = dev.snapshot()
     report = apply_changes(dev, snap, want_output="hp_balanced",
                            want_config="IER-M7.Harman")
-    print(report["before"]["config_index"], report["after"]["config_index"])
+    print(report["before"]["stored_index"], report["after"]["stored_index"])
 ```
 
 PEQ:
@@ -259,8 +259,9 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-109 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
-interpretation, the multi-frame collector and read-session state machines). No device needed.
+149 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+interpretation, the multi-frame collector and read-session state machines, the write
+confirmation wait). No device needed.
 
 ## License
 

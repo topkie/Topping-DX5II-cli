@@ -21,13 +21,17 @@ from .constants import (
     CMD_CONFIG_BLOCK,
     CMD_CROSSFEED_OPTION_MASK,
     CMD_CURRENT_CONFIG,
+    CMD_DEVICE_ID,
     CMD_GET_SAMPLING,
     CMD_GET_SETTINGS,
+    CMD_HARDWARE_VERSION,
     CMD_PCM_OPTION_MASK,
     CMD_PEQ_OPTION_MASK,
     CMD_PEQ_PREVIEW,
     CMD_PEQ_STATE,
     CMD_REMOTE_MUTE_MODE,
+    CMD_SERIAL_NUMBER,
+    CMD_SOFTWARE_VERSION,
     CMD_SWITCH_MCU_CONFIG,
     CMD_OUTPUT,
     CONFIG_BLOCK_WORDS,
@@ -39,6 +43,7 @@ from .constants import (
     PT_READ,
     PT_WRITE,
     REMOTE_MUTE_MODES,
+    SERIAL_NUMBER_FRAMES,
     SETTINGS_FRAME_TOTAL,
     SETTINGS_MIN_WORDS,
     VID,
@@ -48,6 +53,7 @@ from .fields import resolve_output
 from .interpreter import (
     collect_words,
     interpret_config_upload,
+    interpret_identity,
     interpret_peq_preview,
     interpret_sampling,
     interpret_settings,
@@ -76,6 +82,14 @@ _PUSH_SHAPES: Final[tuple[Shape, ...]] = (
 _SETTINGS_SHAPE: Final[Shape] = (CMD_GET_SETTINGS, SETTINGS_FRAME_TOTAL)
 _SAMPLING_SHAPE: Final[Shape] = (CMD_GET_SAMPLING, 1)
 _PREVIEW_SHAPE: Final[Shape] = (CMD_PEQ_PREVIEW, PEQ_PREVIEW_FRAMES)
+
+#: The four identity replies, read on request (no push session needed).
+_IDENTITY_SHAPES: Final[tuple[Shape, ...]] = (
+    (CMD_HARDWARE_VERSION, 1),
+    (CMD_SOFTWARE_VERSION, 1),
+    (CMD_DEVICE_ID, 1),
+    (CMD_SERIAL_NUMBER, SERIAL_NUMBER_FRAMES),
+)
 _UPLOAD_HEADER: Final[Shape] = (CMD_CONFIG_BLOCK, CONFIG_HEADER_FRAMES)
 _UPLOAD_BLOCK: Final[Shape] = (CMD_CONFIG_BLOCK, CONFIG_BLOCK_WORDS)
 _UPLOAD_CURRENT: Final[Shape] = (CMD_CURRENT_CONFIG, 1)
@@ -340,6 +354,20 @@ class Dx5ii:
         )
         return collector.frames
 
+    def read_identity(self, wait_ms: Optional[int] = None) -> list[Frame]:
+        """Versions, device id and serial number, in one window.
+
+        The device answers all four queries straight away and without a push
+        session, so they go out together.
+        """
+        for cmd, _ in _IDENTITY_SHAPES:
+            self.send(cmd, 0, PT_READ)
+        collector = self._collect(
+            dict.fromkeys(_IDENTITY_SHAPES, 1),
+            timeout_ms=wait_ms if wait_ms is not None else 600,
+        )
+        return collector.frames
+
     def read_peq_preview(self, wait_ms: Optional[int] = None) -> list[Frame]:
         """``peqPreviewState``: three frames (meta / hashes)."""
         self.send(CMD_PEQ_PREVIEW, 0, PT_READ)
@@ -459,6 +487,7 @@ class Dx5ii:
                 "firmware": format_firmware(self.info.get("release_number")),
             },
             "settings": None,
+            "identity": None,
             "sampling": None,
             "peq": None,
             "configs": None,
@@ -470,6 +499,7 @@ class Dx5ii:
             result["settings"] = interpret_settings(words[0])
 
         if not light:
+            result["identity"] = interpret_identity(self.read_identity())
             result["sampling"] = interpret_sampling(frames)
             result["peq"] = interpret_peq_preview(frames)
 

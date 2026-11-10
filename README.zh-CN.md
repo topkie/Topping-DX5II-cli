@@ -144,7 +144,7 @@ dx5ii peq delete MyPreset --switch Dynamic       # 删除，并把激活项切�
 from dx5ii import Dx5ii, apply_changes
 
 with Dx5ii() as dev:
-    state = dev.snapshot()                 # device/settings/sampling/peq/configs/pushed
+    state = dev.snapshot()                 # device/settings/identity/sampling/peq/configs/pushed
     print(state["settings"]["volume_db"])
 
     dev.set_output("hp_balanced")          # 返回切换后的 settings
@@ -154,7 +154,7 @@ with Dx5ii() as dev:                       # 一次切两样，拿到可回滚�
     snap = dev.snapshot()
     report = apply_changes(dev, snap, want_output="hp_balanced",
                            want_config="IER-M7.Harman")
-    print(report["before"]["config_index"], report["after"]["config_index"])
+    print(report["before"]["stored_index"], report["after"]["stored_index"])
 ```
 
 PEQ：
@@ -231,7 +231,7 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 python -m unittest discover -s tests -t tests -v
 ```
 
-109 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机、写确认帧等待），不需要设备。
+149 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机、写确认帧等待），不需要设备。
 
 ## 许可证
 

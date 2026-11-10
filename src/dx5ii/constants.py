@@ -43,6 +43,15 @@ CMD_AGREEMENT_CONFIG: Final = 0x1120
 #: Starts the push session: the device reports vu/fft frames again.
 CMD_CONNECT_STATE: Final = 0x1101
 
+#: Identity queries.  Each answers one frame except ``serialNumber``.
+CMD_HARDWARE_VERSION: Final = 0x1201
+CMD_SOFTWARE_VERSION: Final = 0x1202
+CMD_DEVICE_ID: Final = 0x1203
+CMD_SERIAL_NUMBER: Final = 0x7133
+
+#: Frames in the ``serialNumber`` reply: 12 words of packed ASCII.
+SERIAL_NUMBER_FRAMES: Final = 12
+
 #: Reported inside the agreementConfig upload, not a standalone query.
 CMD_CURRENT_CONFIG: Final = 0x1206
 #: 78-word config block, one per EQ preset in the agreementConfig upload.

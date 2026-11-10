@@ -102,6 +102,60 @@ class SamplingTests(unittest.TestCase):
         self.assertIsNone(interpret_sampling([frame(0x710C, 1)]))
 
 
+class IdentityTests(unittest.TestCase):
+    SERIAL = "A-0566-YYMM-017XG-JP3LV-MHHQ5-X1QOH-8BCDR-1NI18"
+
+    @staticmethod
+    def serial_frames() -> list[dict]:
+        raw = IdentityTests.SERIAL.encode("ascii").ljust(48, b"\x00")
+        return [
+            frame(0x7133, int.from_bytes(raw[i * 4:i * 4 + 4], "little"),
+                  total=12, index=i)
+            for i in range(12)
+        ]
+
+    def test_all_four_replies(self) -> None:
+        from dx5ii.interpreter import interpret_identity
+
+        frames = [frame(0x1201, 0x17), frame(0x1202, 0x258),
+                  frame(0x1203, 0x54507420), *self.serial_frames()]
+        out = interpret_identity(frames)
+        self.assertEqual(out["hardware_version"], "V0.17")
+        self.assertEqual(out["software_version"], "V2.58")
+        self.assertEqual(out["device_id"], "0x54507420")
+        self.assertEqual(out["serial_number"], self.SERIAL)
+
+    def test_missing_replies_stay_none(self) -> None:
+        from dx5ii.interpreter import interpret_identity
+
+        out = interpret_identity([frame(0x1202, 0x258)])
+        self.assertIsNone(out["hardware_version"])
+        self.assertEqual(out["software_version"], "V2.58")
+        self.assertIsNone(out["device_id"])
+        self.assertIsNone(out["serial_number"])
+
+    def test_serial_frames_are_ordered_by_index(self) -> None:
+        from dx5ii.interpreter import interpret_identity
+
+        shuffled = list(reversed(self.serial_frames()))
+        out = interpret_identity(shuffled)
+        self.assertEqual(out["serial_number"], self.SERIAL)
+
+    def test_serial_stops_at_nul(self) -> None:
+        from dx5ii.interpreter import decode_serial
+
+        self.assertEqual(decode_serial([0x36352D41]), "A-56")
+        self.assertIsNone(decode_serial([]))
+        self.assertIsNone(decode_serial([0]))
+
+    def test_version_formatting(self) -> None:
+        from dx5ii.interpreter import format_version
+
+        self.assertEqual(format_version(0x258), "V2.58")
+        self.assertEqual(format_version(0x17), "V0.17")
+        self.assertEqual(format_version(0x100), "V1.00")
+
+
 class PeqPreviewTests(unittest.TestCase):
     def test_meta_unpacking(self) -> None:
         from dx5ii.interpreter import interpret_peq_preview
