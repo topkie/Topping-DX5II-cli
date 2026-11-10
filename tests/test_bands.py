@@ -238,6 +238,17 @@ class PreampTests(unittest.TestCase):
     def test_factory_value_decodes_to_minus_six(self) -> None:
         self.assertAlmostEqual(decode_preamp(0x01009B95), -6.0, places=1)
 
+    def test_a_zero_word_reads_as_unity_not_minus_twelve(self) -> None:
+        # The block stores 0 for a channel that does not take part; the web
+        # page reads it as 0.0 dB, and so do we.
+        self.assertEqual(decode_preamp(0), 0.0)
+
+    def test_block_keeps_both_channel_enable_bits(self) -> None:
+        words = encode_block("P", [Band()], [Band()], head=[0, 0, 1, 0])
+        block = decode_block(words)
+        self.assertFalse(block["enabled_left"])
+        self.assertTrue(block["enabled_right"])
+
     def test_block_carries_the_preamp_words(self) -> None:
         word = encode_preamp(-6.0)
         words = encode_block(

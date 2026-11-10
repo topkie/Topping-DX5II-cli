@@ -429,6 +429,8 @@ def _used_bands(preset: dict[str, Any]) -> tuple[list[Band], list[Band]]:
 def _print_bands(preset: dict[str, Any], which: str) -> None:
     print("%s  (index %d%s)" % (preset["name"], preset["index"],
                                ", stored" if preset["stored_current"] else ""))
+    if not preset.get("enabled_left", True):
+        print("  left channel disabled")
     preamp_l = preset["preamp_left"]
     preamp_r = preset["preamp_right"]
     if preamp_l == preamp_r:
@@ -515,6 +517,8 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                 for preset in presets["presets"]:
                     used = sum(1 for b in preset["bands_left"] if b["enabled"])
                     mark = "<- stored" if preset["stored_current"] else ""
+                    if not preset.get("enabled_left", True):
+                        mark = (mark + "  L disabled").strip()
                     print("  %d  %-24s %2d bands  preamp %s %s"
                           % (preset["index"], preset["name"], used,
                              format_preamp(preset["preamp_left"],

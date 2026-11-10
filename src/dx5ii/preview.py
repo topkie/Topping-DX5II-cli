@@ -59,9 +59,9 @@ def _band_words(preset: dict[str, Any]) -> Iterable[tuple[int, int]]:
     right = list(preset.get("bands_right") or [])
     words = [
         (_PREAMP_COMMANDS[0], encode_preamp(preset.get("preamp_left") or 0.0)),
-        (_PREAMP_COMMANDS[1], 1),
+        (_PREAMP_COMMANDS[1], 1 if preset.get("enabled_left", True) else 0),
         (_PREAMP_COMMANDS[2], encode_preamp(preset.get("preamp_right") or 0.0)),
-        (_PREAMP_COMMANDS[3], 1),
+        (_PREAMP_COMMANDS[3], 1 if preset.get("enabled_right", True) else 0),
     ]
     for index in range(11):
         band_l = left[index] if index < len(left) else Band(enabled=False).as_dict()

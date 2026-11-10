@@ -108,9 +108,13 @@ def encode_preamp(db: float) -> int:
 
 
 def decode_preamp(word: int) -> float:
-    """Decode a preamp word back to dB, rounded to the stored 0.1 dB step."""
+    """Decode a preamp word back to dB, rounded to the stored 0.1 dB step.
+
+    A zero word means "not set" -- the block stores it for a channel that is
+    disabled -- and reads as 0.0 dB, the same fallback the web page uses.
+    """
     if word <= 0:
-        return PREAMP_MIN_DB
+        return 0.0
     return round(20.0 * math.log10(word / PREAMP_UNITY), 1)
 
 
@@ -303,6 +307,8 @@ def decode_block(words: Sequence[int]) -> dict:
     return {
         "name": decode_name(list(words[0:4])),
         "enabled": bool(words[4]),
+        "enabled_left": bool(words[4]),
+        "enabled_right": bool(words[6]),
         "preamp_left": decode_preamp(words[5]),
         "preamp_right": decode_preamp(words[7]),
         "bands_left": decode_bands(words, 0),

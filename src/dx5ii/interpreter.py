@@ -343,6 +343,8 @@ def interpret_config_blocks(frames: Iterable[Frame]) -> dict[str, Any]:
             "index": i,
             "name": block["name"],
             "enabled": block["enabled"],
+            "enabled_left": block["enabled_left"],
+            "enabled_right": block["enabled_right"],
             "preamp_left": block["preamp_left"],
             "preamp_right": block["preamp_right"],
             "stored_current": i == stored,

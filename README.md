@@ -154,7 +154,8 @@ an existing preset**: re-uploading the block overwrites it, and that is delibera
 `peq preview` plays a preset from the unit's scratch filter set without storing it. The bands go
 through the per-band live-parameter commands (`0x9101`-`0x9B0A`), which the device only accepts
 inside a preview; one of them sent on its own does nothing. The stored slot is untouched, and
-`--stop` writes the preview meta back to inactive. If the process dies before `--stop` the unit
+`--stop` writes the preview meta back to inactive. A preset whose left channel is disabled (`peq list`
+marks it `L disabled`) keeps that bit in the preview, so the audition sounds the way the preset does. If the process dies before `--stop` the unit
 keeps playing the scratch set: `dx5ii --set-config <slot>` ends it, but the preview itself cannot
 be reopened afterwards.
 
