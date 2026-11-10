@@ -76,6 +76,13 @@ def print_configs(configs: dict[str, Any]) -> None:
         else:
             mark = ""
         print("  %d  %-18s%s" % (slot["index"], slot["name"], mark))
+    source = playing.get("source")
+    if source == "audition":
+        print("note: the device is playing a temporary config; run "
+              "'dx5ii peq preview --stop' to go back")
+    elif source == "cloud":
+        print("note: the device is playing the cloud config; pick it again in "
+              "Topping Home after leaving")
 
 
 def format_value(key: str, value: Any) -> str:

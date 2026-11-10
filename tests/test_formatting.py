@@ -42,7 +42,7 @@ class PrintConfigsTests(unittest.TestCase):
         self.assertEqual(lines[0], "[eq configs]")
         self.assertEqual(lines[1], "  playing                    cloud config (Unknown)")
         self.assertEqual(lines[2], "  stored                     slot 2 (IER-M7.Harman)")
-        self.assertIn("2  IER-M7.Harman       stored", lines[-1])
+        self.assertTrue(any("2  IER-M7.Harman       stored" in line for line in lines))
 
     def test_local_names_the_slot(self) -> None:
         lines = self._render(_configs("local", 2, "IER-M7.Harman"))
@@ -56,7 +56,7 @@ class PrintConfigsTests(unittest.TestCase):
     def test_unknown_does_not_claim_a_slot(self) -> None:
         lines = self._render(_configs("unknown"))
         self.assertEqual(lines[1], "  playing                    unknown (no preview reply)")
-        self.assertIn("2  IER-M7.Harman       stored", lines[-1])
+        self.assertTrue(any("2  IER-M7.Harman       stored" in line for line in lines))
 
 
 def _report(actions, before_playing="cloud", after_playing="local"):

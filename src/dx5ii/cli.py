@@ -513,7 +513,16 @@ def _cmd_peq(args: argparse.Namespace) -> int:
                     print("error: name a preset to preview, pass --from-apo, "
                           "or pass --stop", file=sys.stderr)
                     return 2
-                state = enter_preview(dev, preset)
+                try:
+                    state = enter_preview(dev, preset)
+                except BaseException:
+                    # Ctrl-C in the middle of the handshake would leave the
+                    # device playing half a config; put it back before dying.
+                    try:
+                        leave_preview(dev)
+                    except Exception:
+                        pass
+                    raise
                 ok = bool(state.get("preview_active"))
                 report = {
                     "preview_active": state.get("preview_active"),
