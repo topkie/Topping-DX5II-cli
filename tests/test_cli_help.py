@@ -29,7 +29,7 @@ def walk(parser, path: str = "dx5ii"):
 
 
 #: Commands that take no device: they only forward or print static text.
-FORWARDING = {"dx5ii peq", "dx5ii manual"}
+FORWARDING = {"dx5ii peq", "dx5ii manual", "dx5ii devices"}
 
 
 class HelpSurfaceTests(unittest.TestCase):

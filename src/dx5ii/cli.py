@@ -219,6 +219,26 @@ def build_parser() -> argparse.ArgumentParser:
         target.add_argument("--path", help="explicit HID path (interface 2)")
         add_trace(target)
 
+    p_status = sub.add_parser("status", help="print the device state",
+                              description="Read and print the device state; "
+                                          "same output as `dx5ii` with no "
+                                          "subcommand.")
+    p_status.add_argument("--fast", action="store_true",
+                          help="skip the EQ preset list")
+    add_common(p_status)
+
+    p_devices = sub.add_parser("devices", help="list matching HID interfaces",
+                               description="List the HID interfaces this "
+                                           "device exposes and mark the one "
+                                           "used for the protocol.")
+    p_devices.add_argument("--json", action="store_true", help="emit JSON")
+
+    p_output = sub.add_parser("output", help="switch the output port",
+                              description="Switch the output port and report "
+                                          "the state before and after.")
+    p_output.add_argument("name", help="port name, e.g. hp_balanced")
+    add_common(p_output)
+
     p_get = sub.add_parser("get", help="print current state",
                            description="Print named fields. The field list "
                                        "is at the bottom of `dx5ii --help`.")
@@ -751,6 +771,19 @@ def _print_bands(preset: dict[str, Any], which: str) -> None:
                      format_gain(band["gain_db"]), band["q"]))
 
 
+_WARNED: set[str] = set()
+
+
+def _warn(old: str, new: str) -> None:
+    """Tell the user which spelling replaces ``old``, once per process."""
+    if os.environ.get("DX5II_QUIET"):
+        return
+    if old in _WARNED:
+        return
+    _WARNED.add(old)
+    print("dx5ii: %s will be removed in 0.1.2; %s" % (old, new), file=sys.stderr)
+
+
 def _fail(message: str, code: int = int(ExitCode.DEVICE)) -> int:
     """Print an error line and return the exit code for it."""
     print(message, file=sys.stderr)
@@ -1128,6 +1161,12 @@ def _cmd_peq(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def _run_subcommand(args: argparse.Namespace) -> int:
+    if args.command == "status":
+        return _cmd_status(args)
+    if args.command == "devices":
+        return _cmd_devices(args)
+    if args.command == "output":
+        return _cmd_output(args)
     if args.command == "get":
         return _cmd_get(args.path, args.fields, args.json, args.trace)
     if args.command == "set":
@@ -1146,33 +1185,73 @@ def _run_subcommand(args: argparse.Namespace) -> int:
 
 
 def _read_snapshot(args: argparse.Namespace) -> int:
-    """No subcommand: read the state, optionally switching first."""
-    write_mode = bool(args.set_output or args.set_config)
+    """Read the state, optionally switching the port and/or preset first."""
+    set_output = getattr(args, "set_output", None)
+    set_config = getattr(args, "set_config", None)
+    fast = getattr(args, "fast", False)
+    raw = getattr(args, "raw", False)
+    write_mode = bool(set_output or set_config)
     try:
         with _open(args.path, args.trace) as dev:
             if write_mode:
-                snap = dev.snapshot(include_configs=True, keep_raw=args.raw)
-                report = apply_changes(dev, snap, args.set_output, args.set_config)
+                snap = dev.snapshot(include_configs=True, keep_raw=raw)
+                report = apply_changes(dev, snap, set_output, set_config)
             else:
-                snap = dev.snapshot(include_configs=not args.fast,
-                                    keep_raw=args.raw)
+                snap = dev.snapshot(include_configs=not fast, keep_raw=raw)
                 report = None
     except Dx5iiError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 2
+        return int(ExitCode.DEVICE)
 
     if report is None:
         if args.json:
             print(json.dumps(snap, indent=2, ensure_ascii=False))
         else:
             print_snapshot(snap)
-        return 0
+        return int(ExitCode.OK)
 
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:
         print_switch_report(report)
-    return 0 if report["ok"] else 3
+    return int(ExitCode.OK) if report["ok"] else int(ExitCode.MISMATCH)
+
+
+def _cmd_status(args: argparse.Namespace) -> int:
+    """``dx5ii status``: same output as the bare ``dx5ii``."""
+    return _read_snapshot(args)
+
+
+def _cmd_devices(args: argparse.Namespace) -> int:
+    """``dx5ii devices``: list the matching HID interfaces."""
+    printable = [{k: v for k, v in item.items() if k != "path_bytes"}
+                 for item in list_interfaces()]
+    if args.json:
+        print(json.dumps(printable, indent=2, ensure_ascii=False))
+        return int(ExitCode.OK)
+    for item in printable:
+        marker = " <- protocol" if item["interface_number"] == 2 else ""
+        print("iface %-2s usage_page=%-3s usage=%-2s %s  firmware=%s%s"
+              % (item["interface_number"], item["usage_page"],
+                 item["usage"], item["product"],
+                 format_firmware(item.get("release_number")),
+                 marker))
+    return int(ExitCode.OK)
+
+
+def _cmd_output(args: argparse.Namespace) -> int:
+    """``dx5ii output NAME``: switch the output port and report both sides."""
+    try:
+        with _open(args.path, args.trace) as dev:
+            snap = dev.snapshot(include_configs=True)
+            report = apply_changes(dev, snap, args.name, None)
+    except Dx5iiError as exc:
+        return _fail("error: %s" % exc)
+    if args.json:
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+    else:
+        print_switch_report(report)
+    return int(ExitCode.OK) if report["ok"] else int(ExitCode.MISMATCH)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -1193,21 +1272,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return int(ExitCode.DEVICE)
 
+    # Legacy flag spellings; they go away in 0.1.2.
     if args.devices:
-        interfaces = list_interfaces()
-        printable = [{k: v for k, v in item.items() if k != "path_bytes"}
-                     for item in interfaces]
-        if args.json:
-            print(json.dumps(printable, indent=2, ensure_ascii=False))
-        else:
-            for item in printable:
-                marker = " <- protocol" if item["interface_number"] == 2 else ""
-                print("iface %-2s usage_page=%-3s usage=%-2s %s  firmware=%s%s"
-                      % (item["interface_number"], item["usage_page"],
-                         item["usage"], item["product"],
-                         format_firmware(item.get("release_number")),
-                         marker))
-        return 0
+        _warn("--devices", "use 'dx5ii devices'")
+        return _cmd_devices(args)
+    if args.set_output:
+        _warn("--set-output", "use 'dx5ii output <name>'")
+    if args.set_config:
+        _warn("--set-config", "use 'dx5ii peq switch <preset>'")
+    if args.fast:
+        _warn("--fast", "use 'dx5ii status --fast'")
+    if args.raw:
+        _warn("--raw", "use 'dx5ii status --frames'")
 
     return _read_snapshot(args)
 
