@@ -71,6 +71,8 @@ a note says it is stored but not applied. This is the same information as
 ## peq
 
 ```
+dx5ii peq on
+dx5ii peq off
 dx5ii peq list
 dx5ii peq show <preset>
 dx5ii peq import <file> [--name <name>]

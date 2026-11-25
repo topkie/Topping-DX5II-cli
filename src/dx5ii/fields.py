@@ -43,7 +43,6 @@ from .constants import (
     CMD_DISABLE_CTRL,
     CMD_EXEC_REMOTE_A,
     CMD_EXEC_REMOTE_B,
-    CMD_FACTORY_RESET,
     CMD_HEADPHONE_GAIN,
     CMD_HEARTBEAT,
     CMD_HOME_PAGE,
@@ -166,7 +165,6 @@ FIELD_SPECS: dict[str, tuple[int, str, Optional[Sequence[str]], str]] = {
 
 #: One-shot actions: no value, no read-back.
 FIELD_ACTIONS: dict[str, int] = {
-    "factory-reset": CMD_FACTORY_RESET,
     "disable-controller": CMD_DISABLE_CTRL,
     "call-c1": CMD_CALL_C1,
     "call-c2": CMD_CALL_C2,

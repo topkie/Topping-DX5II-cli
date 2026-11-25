@@ -39,6 +39,7 @@ from .bands import (
 from .constants import (
     CMD_CONNECT_STATE,
     CMD_HEARTBEAT,
+    CMD_PEQ_STATE,
     CMD_SWITCH_MCU_CONFIG,
     DESTRUCTIVE_COMMANDS,
     PT_READ,
@@ -313,6 +314,16 @@ def build_parser() -> argparse.ArgumentParser:
                     "`peq` field: `dx5ii set peq on` / `dx5ii set peq off`.")
     add_common(p_peq)
     peq_sub = p_peq.add_subparsers(dest="peq_command")
+
+    p_pon = peq_sub.add_parser("on", help="turn EQ on",
+                               description="Turn the device's EQ on; same as "
+                                           "`dx5ii set peq on`.")
+    add_common(p_pon)
+
+    p_poff = peq_sub.add_parser("off", help="turn EQ off",
+                                description="Turn the device's EQ off; same as "
+                                            "`dx5ii set peq off`.")
+    add_common(p_poff)
 
     p_plist = peq_sub.add_parser("list", help="list presets with band counts")
     add_common(p_plist)
@@ -1229,6 +1240,30 @@ def _peq_overwrite(dev, args, presets, preset_blocks, as_json) -> int:
     return 0 if result["verified"] is not False else 3
 
 
+def _peq_power(dev, args, wanted: bool, as_json: bool) -> int:
+    """Turn EQ on or off and report what the device says afterwards."""
+    before = (dev.snapshot(include_configs=False).get("pushed") or {}).get("peq_enabled")
+    changed = before is not wanted
+    if changed:
+        dev.send(CMD_PEQ_STATE, 1 if wanted else 0, PT_WRITE, 1, 1)
+        wait = getattr(dev, "wait_for_frame", None)
+        if wait is not None:
+            wait(CMD_PEQ_STATE, lambda frame: (frame["data"] != 0) == wanted,
+                 timeout_ms=300)
+        else:
+            time.sleep(0.2)
+    after = (dev.snapshot(include_configs=False).get("pushed") or {}).get("peq_enabled")
+    confirmed = after is wanted
+    report = {"peq": wanted, "before": before, "changed": changed,
+              "confirmed": confirmed}
+    name = "on" if wanted else "off"
+    line = "peq %s" % name if changed else "peq already %s" % name
+    if not confirmed:
+        line += " (device still reports %s)" % ("on" if after else "off")
+    _emit(report, [line], as_json)
+    return int(ExitCode.OK) if confirmed else int(ExitCode.MISMATCH)
+
+
 def _peq_switch(dev, args, snap, as_json) -> int:
     """Switch to another preset; the same report ``--set-config`` prints."""
     configs = snap.get("configs") or {}
@@ -1269,10 +1304,14 @@ def _cmd_peq(args: argparse.Namespace) -> int:
         _warn("peq list", "use 'dx5ii peq'")
         return _cmd_configs(path, as_json, trace)
     handler = _PEQ_COMMANDS.get(args.peq_command)
-    if handler is None:
+    if handler is None and args.peq_command not in ("on", "off"):
         raise AssertionError(f"unhandled peq command {args.peq_command!r}")
     try:
         with _open(path, trace) as dev:
+            if args.peq_command in ("on", "off"):
+                # Turning EQ on or off needs only the pushed state; reading the
+                # preset list would add a full upload for nothing.
+                return _peq_power(dev, args, args.peq_command == "on", as_json)
             if args.peq_command == "switch":
                 # Switching needs the whole state (settings, preview, slots) to
                 # produce the same report --set-config prints, and reading the

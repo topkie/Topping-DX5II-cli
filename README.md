@@ -61,6 +61,8 @@ dx5ii --fast                            # same, skip the preset upload
 dx5ii --json                            # JSON output
 dx5ii --devices                         # list HID interfaces (+ firmware), mark the protocol one
 dx5ii --set-output hp_balanced          # switch output only, then read back
+dx5ii peq on                            # turn EQ on (same as set peq on)
+dx5ii peq off                           # turn EQ off
 dx5ii peq switch Dynamic                # switch preset by name or index
 dx5ii --set-config Dynamic              # the same, kept as a top-level flag
 dx5ii --set-output hp_balanced --set-config Dynamic
@@ -277,8 +279,9 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 - **Device name is read-only.** `0x7127` has no receive handler in the firmware.
 - **Switching UAC re-enumerates the device.** After `uac1` the USB descriptors are rebuilt and the
   next write returns `-1`; wait ~3 s and reopen.
-- **Ten actions only work through `raw`** (`factory-reset`, `disable-controller`, `call-c1/c2`,
+- **Nine actions only work through `raw`** (`disable-controller`, `call-c1/c2`,
   `execute-remote-a/b`, `heartbeat`, `save-c1/c2`, `clear-pairing`) because they have no read-back.
+  A factory reset is `raw 0x710B 1 --force`; it is no longer a `set` field.
 - **Switching the output port also changes EQ and volume.** Both are remembered per port.
 - **`0x1206` is read-only**; use `0x110E` to switch presets.
 - **`raw` refuses two commands**: `0x710B` (factory reset) and `0x712E` (firmware update mode).

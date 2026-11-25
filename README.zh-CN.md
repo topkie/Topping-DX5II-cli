@@ -53,6 +53,8 @@ dx5ii --fast                            # 同上，跳过预设列表
 dx5ii --json                            # 输出 JSON
 dx5ii --devices                         # 枚举 HID 接口（含固件版本），标出协议口
 dx5ii --set-output hp_balanced          # 只切输出端口，然后读回
+dx5ii peq on                            # 打开 EQ（等同 set peq on）
+dx5ii peq off                           # 关闭 EQ
 dx5ii peq switch Dynamic                # 按名字或索引切换预设
 dx5ii --set-config Dynamic              # 同一动作，保留为顶层参数
 dx5ii --set-output hp_balanced --set-config Dynamic
@@ -239,8 +241,9 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 
 - **设备名不可写**。`0x7127` 只有读方向，固件没有接收名字的处理器。
 - **切 UAC 会重枚举**。改成 `uac1` 后 USB 描述符重建，后续写返回 `-1`。切完等约 3 秒、重新打开。
-- **10 个动作只能走 `raw`**：`factory-reset`、`disable-controller`、`call-c1/c2`、`execute-remote-a/b`、
+- **9 个动作只能走 `raw`**：`disable-controller`、`call-c1/c2`、`execute-remote-a/b`、
   `heartbeat`、`save-c1/c2`、`clear-pairing`。它们没有回读状态。
+  恢复出厂设置同样只剩 `raw 0x710B 1 --force`，它不再是 `set` 字段。
 - **切输出端口会连带改 EQ 和音量**。两者都按端口分别记忆，切回原端口即恢复。
 - **`0x1206` 只读**。切预设用 `0x110E`。
 - **`raw` 会拒绝两个命令**：`0x710B`（恢复出厂）与 `0x712E`（固件更新模式）。后者会让设备直接离开

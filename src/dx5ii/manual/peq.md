@@ -13,6 +13,18 @@ dx5ii peq show SPEAKER
 uses. When the two channels differ, the line appears twice with an `L` or `R`
 prefix; when they are equal, one line covers both.
 
+## Turning EQ on and off
+
+```
+dx5ii peq on
+dx5ii peq off
+```
+
+Same command the `peq` field writes (`dx5ii set peq on`). The device reports the
+new state as a push frame, so the command reads the state back and says
+`peq already on` when nothing had to change. If the device does not confirm the
+switch the exit code is 3.
+
 ## Switching
 
 `dx5ii peq switch <name|index>` makes the device play another stored preset. It
