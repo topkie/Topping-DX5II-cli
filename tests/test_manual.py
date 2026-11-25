@@ -40,7 +40,7 @@ class SectionTests(unittest.TestCase):
 
     def test_unknown_section_is_an_error(self):
         code, _, err = run("nope")
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 1)
         self.assertIn("unknown manual section", err)
 
     def test_list_names_every_section(self):

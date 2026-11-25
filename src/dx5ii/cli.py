@@ -20,6 +20,7 @@ import sys
 import tempfile
 import textwrap
 import time
+from enum import IntEnum
 from importlib import resources
 from pathlib import Path
 from typing import Any, Optional, Sequence
@@ -68,6 +69,25 @@ from .peq import (
 )
 from .protocol import format_firmware
 from .textfmt import render_markdown
+
+
+class ExitCode(IntEnum):
+    """Process exit codes; the second column is what the v3 design promises."""
+
+    OK = 0
+    USAGE = 1          # bad argument, unknown field, missing value
+    DEVICE = 2         # device or protocol failure, unknown preset
+    MISMATCH = 3       # wrote a value, read back something else
+    TIMEOUT = 4        # a read or write did not complete in time
+
+
+class _Parser(argparse.ArgumentParser):
+    """Usage errors exit 1, not argparse's default 2."""
+
+    def error(self, message: str) -> None:  # type: ignore[override]
+        self.print_usage(sys.stderr)
+        print("%s: error: %s" % (self.prog, message), file=sys.stderr)
+        raise SystemExit(int(ExitCode.USAGE))
 
 
 def _open(path: Optional[str] = None, trace: Optional[str] = None) -> Dx5ii:
@@ -141,7 +161,8 @@ def _cmd_manual(args: argparse.Namespace) -> int:
         return 0
     section = args.section or "index"
     if section not in _MANUAL_SECTIONS:
-        return _fail("error: unknown manual section %r; try --list" % section)
+        return _fail("error: unknown manual section %r; try --list" % section,
+                     ExitCode.USAGE)
     try:
         text = _manual_text(section)
     except Dx5iiError as exc:
@@ -161,7 +182,7 @@ def _cmd_manual(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser (also used by ``--help``)."""
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="dx5ii",
         description="Control a Topping DX5 II over its HID interface.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -369,7 +390,7 @@ def _cmd_get(path: Optional[str], fields: Sequence[str], as_json: bool,
     selected: dict[str, Any] = {}
     for name in fields:
         if name not in FIELD_SPECS:
-            return _fail(f"error: unknown field {name!r}")
+            return _fail(f"error: unknown field {name!r}", ExitCode.USAGE)
         value = field_state(snap, name)
         selected[name] = value
         raw = field_raw(snap, name)
@@ -405,7 +426,7 @@ def _encoded_words(name: str, value: Any, settings: Optional[dict[str, Any]]) ->
 def _cmd_set(path: Optional[str], pairs: Sequence[str], as_json: bool,
              trace: Optional[str] = None) -> int:
     if len(pairs) % 2 != 0:
-        return _fail("error: set needs field/value pairs")
+        return _fail("error: set needs field/value pairs", ExitCode.USAGE)
     items = [(pairs[i], pairs[i + 1]) for i in range(0, len(pairs), 2)]
 
     with _open(path, trace) as dev:
@@ -415,7 +436,11 @@ def _cmd_set(path: Optional[str], pairs: Sequence[str], as_json: bool,
         # half of the batch already written.
         encoded: list[tuple[str, str, list[tuple[int, int, int, int]]]] = []
         for name, value in items:
-            encoded.append((name, value, list(encode_field(name, value, before["settings"]))))
+            try:
+                encoded.append((name, value,
+                                list(encode_field(name, value, before["settings"]))))
+            except Dx5iiError as exc:
+                return _fail("error: %s" % exc, ExitCode.USAGE)
 
         echoes: dict[str, bool] = {}
         for name, value, commands in encoded:
@@ -726,7 +751,7 @@ def _print_bands(preset: dict[str, Any], which: str) -> None:
                      format_gain(band["gain_db"]), band["q"]))
 
 
-def _fail(message: str, code: int = 2) -> int:
+def _fail(message: str, code: int = int(ExitCode.DEVICE)) -> int:
     """Print an error line and return the exit code for it."""
     print(message, file=sys.stderr)
     return code
@@ -785,7 +810,7 @@ def _peq_preview(dev, args, presets, preset_blocks, as_json) -> int:
             return _fail("error: no preset %r" % args.preset)
     else:
         return _fail("error: name a preset to preview, pass --from-apo, "
-                     "or pass --stop")
+                     "or pass --stop", ExitCode.USAGE)
 
     try:
         state = enter_preview(dev, preset)
@@ -851,13 +876,13 @@ def _peq_show(dev, args, presets, preset_blocks, as_json) -> int:
 def _peq_create(dev, args, presets, preset_blocks, as_json) -> int:
     name = args.name.strip()
     if not name:
-        return _fail("error: empty preset name")
+        return _fail("error: empty preset name", ExitCode.USAGE)
     if len(name.encode("utf-8")) > CONFIG_NAME_WORDS * 4:
         return _fail("error: name longer than %d UTF-8 bytes"
-                     % (CONFIG_NAME_WORDS * 4))
+                     % (CONFIG_NAME_WORDS * 4), ExitCode.USAGE)
     if find_preset(presets, name):
         return _fail("error: preset %r already exists; refusing to overwrite "
-                     "an existing preset" % name)
+                     "an existing preset" % name, ExitCode.USAGE)
 
     head = None
     if args.copy:
@@ -910,7 +935,7 @@ def _peq_delete(dev, args, presets, preset_blocks, as_json) -> int:
     if target is None:
         return _fail("error: no preset %r to switch to" % args.switch)
     if target["index"] == preset["index"]:
-        return _fail("error: --switch must name a different preset")
+        return _fail("error: --switch must name a different preset", ExitCode.USAGE)
     delete_preset(dev, preset["index"], target["index"])
     after = read_presets(dev)
     report = {
@@ -933,7 +958,8 @@ def _peq_rename(dev, args, presets, preset_blocks, as_json) -> int:
         return _fail("error: no preset %r" % args.preset)
     new_name = args.new_name.strip()
     if not new_name or len(new_name.encode("utf-8")) > DEVICE_NAME_MAX_BYTES:
-        return _fail("error: name must be 1..%d UTF-8 bytes" % DEVICE_NAME_MAX_BYTES)
+        return _fail("error: name must be 1..%d UTF-8 bytes" % DEVICE_NAME_MAX_BYTES,
+                     ExitCode.USAGE)
     rename_preset(dev, preset["index"], new_name)
     after = read_presets(dev)
     renamed = any(p["name"] == new_name for p in after["presets"])
@@ -1165,7 +1191,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return _run_subcommand(args)
         except Dx5iiError as exc:
             print(f"error: {exc}", file=sys.stderr)
-            return 2
+            return int(ExitCode.DEVICE)
 
     if args.devices:
         interfaces = list_interfaces()
