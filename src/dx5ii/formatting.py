@@ -177,6 +177,15 @@ def print_snapshot(snap: dict[str, Any]) -> None:
     elif settings is not None:
         print("[eq configs] skipped")
 
+    frames = snap.get("frames") or []
+    if frames:
+        print("[frames]")
+        for item in frames:
+            text = item.get("hex", "")
+            if len(text) > 34:
+                text = text[:34] + "..."
+            print("  %8.1f ms  %s" % (item.get("t_ms", 0.0), text))
+
 
 def _state_line(label: str, state: dict[str, Any]) -> str:
     """Render one side of a switch report: port, stored slot and audible source."""

@@ -234,6 +234,9 @@ def build_parser() -> argparse.ArgumentParser:
                                           "subcommand.")
     p_status.add_argument("--fast", action="store_true",
                           help="skip the EQ preset list")
+    p_status.add_argument("--frames", action="store_true",
+                          help="also print every frame read, with milliseconds "
+                               "since the device was opened")
     add_common(p_status)
 
     p_devices = sub.add_parser("devices", help="list matching HID interfaces",
@@ -1359,7 +1362,7 @@ def _read_snapshot(args: argparse.Namespace) -> int:
     set_output = getattr(args, "set_output", None)
     set_config = getattr(args, "set_config", None)
     fast = getattr(args, "fast", False)
-    raw = getattr(args, "raw", False)
+    raw = getattr(args, "raw", False) or getattr(args, "frames", False)
     write_mode = bool(set_output or set_config)
     try:
         with _open(args.path, args.trace) as dev:

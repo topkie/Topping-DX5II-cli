@@ -59,6 +59,8 @@ python -m dx5ii get
 dx5ii                                   # full state, including the preset list
 dx5ii --fast                            # same, skip the preset upload
 dx5ii --json                            # JSON output
+dx5ii status --frames                   # state plus every frame read (ms since open)
+dx5ii devices                           # same interface list as --devices
 dx5ii --devices                         # list HID interfaces (+ firmware), mark the protocol one
 dx5ii --set-output hp_balanced          # switch output only, then read back
 dx5ii peq on                            # turn EQ on (same as set peq on)
@@ -302,7 +304,7 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-237 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+249 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
 interpretation, the multi-frame collector and read-session state machines, the write
 confirmation wait, the temporary preview handshake). No device needed.
 

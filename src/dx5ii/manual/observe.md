@@ -47,6 +47,22 @@ Two commands behave differently from what their name suggests: `0x110A`
 read protocol type, and `0x7142` executes the multifunction key. There is no
 way to probe them without changing the device.
 
+## Frames behind a read
+
+```
+dx5ii status --frames
+dx5ii status --frames --json
+```
+
+`--frames` keeps every report the read consumed and prints it under `[frames]`,
+with milliseconds since the device was opened. In JSON the same list is
+`frames[]` with `t_ms` and `hex`; the older key `raw_frames` still carries the
+same data and goes away in 0.1.2.
+
+This is the view for "what did the device actually send while I read the state":
+requested replies and pushed frames both land here, so the timestamps show what
+arrived on its own and what came back because of a request.
+
 ## watch
 
 ```

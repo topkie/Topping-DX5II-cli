@@ -142,6 +142,7 @@ class Dx5ii:
         self._dev: Any = None
         self.raw_frames: list[dict[str, Any]] = []
         self.keep_raw: bool = False
+        self._raw_origin = time.monotonic()
         #: Terminal state of the most recent :meth:`_collect` session.
         self.last_read_state: Optional[ReadState] = None
         self._trace_file: Optional[TextIO] = None
@@ -218,6 +219,15 @@ class Dx5ii:
             raise Dx5iiError(
                 f"short HID write for cmd 0x{cmd:04X}: {written!r}")
 
+    def _note_raw(self, raw: bytes) -> None:
+        """Record one inbound report with a timestamp relative to the open."""
+        origin = getattr(self, "_raw_origin", None)
+        if origin is None:
+            origin = self._raw_origin = time.monotonic()
+        self.raw_frames.append(
+            {"t_ms": round((time.monotonic() - origin) * 1000, 1),
+             "hex": raw.hex()})
+
     def _parse(self, buf: Any) -> Optional[Frame]:
         """Parse one inbound report, recording it when ``keep_raw`` is on."""
         raw = bytes(buf)
@@ -225,7 +235,7 @@ class Dx5ii:
             return None
         self._trace("rx", raw)
         if self.keep_raw:
-            self.raw_frames.append({"t": round(time.time(), 3), "hex": raw.hex()})
+            self._note_raw(raw)
         return parse_frame(raw)
 
     def _collect(
@@ -286,8 +296,7 @@ class Dx5ii:
                 continue
             self._trace("rx", raw)
             if keep:
-                self.raw_frames.append(
-                    {"t": round(time.time(), 3), "hex": raw.hex()})
+                self._note_raw(raw)
             parsed = parse_frame(raw)
             if parsed:
                 frames.append(parsed)
@@ -541,6 +550,8 @@ class Dx5ii:
             }
 
         if keep_raw:
+            result["frames"] = self.raw_frames
+            # Kept under the old name until 0.1.2: scripts read it today.
             result["raw_frames"] = self.raw_frames
         return result
 
