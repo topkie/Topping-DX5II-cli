@@ -13,6 +13,14 @@ dx5ii peq show SPEAKER
 uses. When the two channels differ, the line appears twice with an `L` or `R`
 prefix; when they are equal, one line covers both.
 
+## Switching
+
+`dx5ii peq switch <name|index>` makes the device play another stored preset. It
+is the same action as the top-level `--set-config`, which stays available; both
+print the state before and after. Switching also ends a Topping Home cloud
+preview, and the device has no command that goes back to that cloud config, so
+the web page has to be used again.
+
 ## Preamp
 
 Each channel has its own preamp, from −12 dB to +12 dB. `peq list` prints

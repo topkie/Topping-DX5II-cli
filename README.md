@@ -61,7 +61,8 @@ dx5ii --fast                            # same, skip the preset upload
 dx5ii --json                            # JSON output
 dx5ii --devices                         # list HID interfaces (+ firmware), mark the protocol one
 dx5ii --set-output hp_balanced          # switch output only, then read back
-dx5ii --set-config Dynamic              # switch preset by name or index
+dx5ii peq switch Dynamic                # switch preset by name or index
+dx5ii --set-config Dynamic              # the same, kept as a top-level flag
 dx5ii --set-output hp_balanced --set-config Dynamic
 ```
 

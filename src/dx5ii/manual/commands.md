@@ -78,6 +78,7 @@ dx5ii peq delete <preset> [--switch <preset>]
 dx5ii peq rename <preset> <new-name>
 dx5ii peq preview [<preset>] [--from-apo FILE] [--stop]
 dx5ii peq overwrite <preset> (--from-apo FILE | --copy <preset> | --last)
+dx5ii peq switch <preset>
 ```
 
 See `dx5ii manual peq` for the details and the limits of each one.

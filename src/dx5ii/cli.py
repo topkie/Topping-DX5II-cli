@@ -44,7 +44,8 @@ from .constants import (
 )
 from .device import Dx5ii, list_interfaces
 from .errors import Dx5iiError
-from .fields import FIELD_ACTIONS, FIELD_SPECS, encode_field, field_raw, field_state
+from .fields import (FIELD_ACTIONS, FIELD_SPECS, encode_field, field_raw,
+                     field_state, resolve_config)
 from .formatting import (
     format_gain,
     format_preamp,
@@ -312,6 +313,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_pren.add_argument("--json", action="store_true")
     p_pren.add_argument("--path")
     add_trace(p_pren)
+
+    p_psw = peq_sub.add_parser(
+        "switch", help="switch to another preset",
+        description="Switch the device to another preset. Same action as the "
+                    "top-level --set-config. This also ends a Topping Home "
+                    "cloud preview, and the device cannot go back to the cloud "
+                    "config by itself.")
+    p_psw.add_argument("slot", help="preset name or index")
+    p_psw.add_argument("--json", action="store_true")
+    p_psw.add_argument("--path")
+    add_trace(p_psw)
 
     p_pover = peq_sub.add_parser(
         "overwrite", help="replace the contents of an existing preset")
@@ -1037,6 +1049,21 @@ def _peq_overwrite(dev, args, presets, preset_blocks, as_json) -> int:
     return 0 if result["verified"] is not False else 3
 
 
+def _peq_switch(dev, args, snap, as_json) -> int:
+    """Switch to another preset; the same report ``--set-config`` prints."""
+    configs = snap.get("configs") or {}
+    try:
+        target = resolve_config(args.slot, configs.get("slots") or [])
+    except Dx5iiError as exc:
+        return _fail(f"error: {exc}")
+    report = apply_changes(dev, snap, None, target)
+    if as_json:
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+    else:
+        print_switch_report(report)
+    return 0 if report["ok"] else 3
+
+
 _PEQ_COMMANDS = {
     "preview": _peq_preview,
     "list": _peq_list,
@@ -1045,6 +1072,7 @@ _PEQ_COMMANDS = {
     "delete": _peq_delete,
     "rename": _peq_rename,
     "overwrite": _peq_overwrite,
+    "switch": _peq_switch,
 }
 
 
@@ -1056,6 +1084,11 @@ def _cmd_peq(args: argparse.Namespace) -> int:
         raise AssertionError(f"unhandled peq command {args.peq_command!r}")
     try:
         with _open(path, args.trace) as dev:
+            if args.peq_command == "switch":
+                # Switching needs the whole state (settings, preview, slots) to
+                # produce the same report --set-config prints, and reading the
+                # slots twice would cost another full upload.
+                return _peq_switch(dev, args, dev.snapshot(include_configs=True), as_json)
             presets, preset_blocks = read_preset_blocks(dev)
             return handler(dev, args, presets, preset_blocks, as_json)
     except Dx5iiError as exc:

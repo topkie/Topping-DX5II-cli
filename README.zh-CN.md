@@ -53,7 +53,8 @@ dx5ii --fast                            # 同上，跳过预设列表
 dx5ii --json                            # 输出 JSON
 dx5ii --devices                         # 枚举 HID 接口（含固件版本），标出协议口
 dx5ii --set-output hp_balanced          # 只切输出端口，然后读回
-dx5ii --set-config Dynamic              # 只切 EQ 预设（名字或索引）
+dx5ii peq switch Dynamic                # 按名字或索引切换预设
+dx5ii --set-config Dynamic              # 同一动作，保留为顶层参数
 dx5ii --set-output hp_balanced --set-config Dynamic
 ```
 
