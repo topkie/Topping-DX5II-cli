@@ -303,7 +303,8 @@ def build_parser() -> argparse.ArgumentParser:
         "peq", help="manage EQ presets",
         description="Manage preset contents. The PEQ on/off switch is the "
                     "`peq` field: `dx5ii set peq on` / `dx5ii set peq off`.")
-    peq_sub = p_peq.add_subparsers(dest="peq_command", required=True)
+    add_common(p_peq)
+    peq_sub = p_peq.add_subparsers(dest="peq_command")
 
     p_plist = peq_sub.add_parser("list", help="list presets with band counts")
     add_common(p_plist)
@@ -650,16 +651,28 @@ def _cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _legacy_keys() -> bool:
+    """Whether the JSON payloads still carry the pre-0.1.2 key spellings."""
+    return not os.environ.get("DX5II_NO_LEGACY_KEYS")
+
+
 def _cmd_configs(path: Optional[str], as_json: bool,
                  trace: Optional[str] = None) -> int:
-    with _open(path, trace) as dev:
-        snap = dev.snapshot(include_configs=True)
+    """``dx5ii peq`` / ``dx5ii configs``: the preset view plus what plays."""
+    try:
+        with _open(path, trace) as dev:
+            snap = dev.snapshot(include_configs=True)
+    except Dx5iiError as exc:
+        return _fail("error: %s" % exc)
     configs = snap["configs"]
     if as_json:
-        print(json.dumps(configs, indent=2, ensure_ascii=False))
-        return 0
+        payload = dict(configs)
+        if _legacy_keys():
+            payload["presets"] = configs.get("slots") or []
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return int(ExitCode.OK)
     print_configs(configs)
-    return 0
+    return int(ExitCode.OK)
 
 
 # ---------------------------------------------------------------------------
@@ -1138,11 +1151,17 @@ _PEQ_COMMANDS = {
 def _cmd_peq(args: argparse.Namespace) -> int:
     path = getattr(args, "path", None)
     as_json = bool(getattr(args, "json", False))
+    trace = getattr(args, "trace", None)
+    if args.peq_command is None:
+        return _cmd_configs(path, as_json, trace)
+    if args.peq_command == "list":
+        _warn("peq list", "use 'dx5ii peq'")
+        return _cmd_configs(path, as_json, trace)
     handler = _PEQ_COMMANDS.get(args.peq_command)
     if handler is None:
         raise AssertionError(f"unhandled peq command {args.peq_command!r}")
     try:
-        with _open(path, args.trace) as dev:
+        with _open(path, trace) as dev:
             if args.peq_command == "switch":
                 # Switching needs the whole state (settings, preview, slots) to
                 # produce the same report --set-config prints, and reading the
@@ -1176,6 +1195,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
     if args.command == "watch":
         return _cmd_watch(args)
     if args.command == "configs":
+        _warn("configs", "use 'dx5ii peq'")
         return _cmd_configs(args.path, args.json, args.trace)
     if args.command == "peq":
         return _cmd_peq(args)
