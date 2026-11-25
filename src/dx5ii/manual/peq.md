@@ -44,18 +44,27 @@ exact read-back of a fractional value is not expected.
 ## Creating presets
 
 ```
-dx5ii peq create "My EQ"
-dx5ii peq create "My EQ" --copy SPEAKER
-dx5ii peq create "Desk" --from-apo eq.txt
+dx5ii peq import eq.txt
+dx5ii peq import eq.txt --name "Desk"
+dx5ii peq copy SPEAKER "Desk"
+dx5ii peq create "Empty"
 ```
 
-`--copy` starts from an existing preset, which keeps its preamp and enables.
-`--from-apo` reads an Equalizer APO text file; see below.
+`peq import` reads an Equalizer APO file; the preset name defaults to the file
+name. `peq copy` duplicates an existing preset, which keeps its preamp and its
+per-channel enables. `peq create` makes an empty preset with all bands off.
+
+Both `import` and `copy` refuse a name that already exists — use
+`peq overwrite` to replace a preset. The new preset becomes the one the device
+plays; add `--no-switch` to go back to what was playing before.
+
+`peq create --from-apo FILE` and `peq create --copy PRESET` still work but print
+a hint pointing at `import` and `copy`.
 
 ## Importing an Equalizer APO file
 
 ```
-dx5ii peq create "Desk" --from-apo "C:\Program Files\EqualizerAPO\config\config.txt"
+dx5ii peq import "C:\Program Files\EqualizerAPO\config\config.txt"
 dx5ii peq preview --from-apo eq.txt          # listen without creating anything
 dx5ii peq overwrite SPEAKER --from-apo eq.txt # replace an existing preset
 ```
@@ -71,6 +80,23 @@ Rules for `--from-apo`:
 - `HP` and `LP` need no `Gain`; Equalizer APO does not write one for them.
 - The whole file must map onto the device. An unknown type, a missing gain on a
   type that needs one, or more than 11 bands is an error — nothing is written.
+
+## Exporting
+
+```
+dx5ii peq export IER-M7.Harman eq.txt
+```
+
+Writes the preset as Equalizer APO text: one `Preamp:` line followed by one
+`Filter N:` line per band, so the file goes straight into Equalizer APO or back
+in through `peq import`.
+
+Two things are noted in the file itself. The device stores gains in 0.1 dB steps
+and Q with four decimals, so the exported values are what the device holds, not
+the unrounded numbers a page may have shown. And Equalizer APO carries a single
+filter list for both channels: the file is written from the left channel and
+every difference on the right is appended as a `# right channel differs:`
+comment, so nothing is dropped silently.
 
 ## Renaming
 

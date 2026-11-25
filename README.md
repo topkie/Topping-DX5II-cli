@@ -151,9 +151,9 @@ lists (`input-option usb,bt`), volumes (`-40.0`) and timeouts (`off`/`10s`/`30s`
 dx5ii configs                                    # current source, stored slot and slots
 dx5ii peq list                                   # presets, stored one marked with ←
 dx5ii peq show Dynamic                           # per-band freq/gain/Q, both channels
-dx5ii peq create MyPreset --copy Dynamic         # duplicate (not activated by default)
-dx5ii peq create MyPreset --from-apo delta.txt   # import one Device section of an APO config
-dx5ii peq create MyPreset --copy SPEAKER --activate
+dx5ii peq import delta.txt --name MyPreset       # import one Device section of an APO config
+dx5ii peq copy Dynamic MyPreset                  # duplicate a preset
+dx5ii peq export MyPreset delta-export.txt       # write a preset back as APO text
 dx5ii peq rename MyPreset Better                 # names are limited to 14 UTF-8 bytes
 dx5ii peq delete MyPreset --switch Dynamic
 dx5ii peq preview MyPreset                      # audition it without storing it
@@ -163,11 +163,11 @@ dx5ii peq overwrite MyPreset --from-apo delta.txt   # replace a stored preset in
 dx5ii peq overwrite MyPreset --copy Other --backup before.json
 ```
 
-`peq create` and `peq delete` only ever add or remove a preset. To change what a stored preset
+`peq import`, `peq copy` and `peq delete` only ever add or remove a preset. To change what a stored preset
 holds, use `peq overwrite` below; there is no per-band editor that leaves the rest alone.
 
 `peq preview` plays a preset from the unit's scratch filter set without storing it;
-`--from-apo` does the same for an Equalizer APO file, parsing it exactly like `peq create --from-apo`
+`--from-apo` does the same for an Equalizer APO file, parsing it exactly like `peq import`
 but creating no preset. The bands go
 through the per-band live-parameter commands (`0x9101`-`0x9B0A`), which the device only accepts
 inside a preview; one of them sent on its own does nothing. The stored slot is untouched, and
@@ -299,7 +299,7 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-210 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+237 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
 interpretation, the multi-frame collector and read-session state machines, the write
 confirmation wait, the temporary preview handshake). No device needed.
 

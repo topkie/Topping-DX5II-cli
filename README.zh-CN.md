@@ -128,9 +128,9 @@ dx5ii manual peq --markdown             # 输出原始 markdown，而不是终�
 dx5ii configs                                    # 当前音源、存储槽位与全部预设
 dx5ii peq list                                   # 列出预设（设备存储的当前项标 ←）
 dx5ii peq show Dynamic                           # 打印左右声道每段的频点/增益/Q
-dx5ii peq create MyPreset --copy Dynamic         # 复制一份新预设（默认不激活）
-dx5ii peq create MyPreset --from-apo delta.txt   # 导入 APO 配置里本机对应的 Device 段
-dx5ii peq create MyPreset --copy SPEAKER --activate
+dx5ii peq import delta.txt --name MyPreset       # 导入 APO 配置里本机对应的 Device 段
+dx5ii peq copy Dynamic MyPreset                  # 复制一份新预设
+dx5ii peq export MyPreset delta-export.txt       # 把一个预设写成 APO 文本
 dx5ii peq rename MyPreset Better                 # 改名，名字最多 14 字节
 dx5ii peq delete MyPreset --switch Dynamic       # 删除，并把激活项切到指定预设
 dx5ii peq preview MyPreset                       # 临时试听，不写进预设
@@ -140,10 +140,10 @@ dx5ii peq overwrite MyPreset --from-apo delta.txt   # 整份替换一个存储�
 dx5ii peq overwrite MyPreset --copy Other --backup before.json
 ```
 
-`peq create` / `peq delete` 只做新建与删除。要改某个存储预设的内容，用下面的 `peq overwrite`；
+`peq import` / `peq copy` / `peq delete` 只做新建与删除。要改某个存储预设的内容，用下面的 `peq overwrite`；
 没有「只改一段、其余不动」的逐段编辑。
 
-`peq preview` 用设备的临时滤波器组试听一个预设，不写进存储的槽位；`--from-apo` 对 Equalizer APO 文件做同样的事，解析规则与 `peq create --from-apo` 相同，但不建预设。各段通过逐段实时参数命令
+`peq preview` 用设备的临时滤波器组试听一个预设，不写进存储的槽位；`--from-apo` 对 Equalizer APO 文件做同样的事，解析规则与 `peq import` 相同，但不建预设。各段通过逐段实时参数命令
 （`0x9101`–`0x9B0A`）写入，设备只在预览上下文里接受它们——单发一条不起作用。存储的槽位不受影响，
 `--stop` 把预览状态写回未激活。预设若禁用了某个声道（`peq list` 标 `L disabled`），试听也照这个启用位写，听起来与预设本身一致。若进程在 `--stop` 之前结束，设备会继续播放临时组：
 `dx5ii --set-config <槽位>` 能结束它，但预览本身之后无法再打开。
@@ -259,7 +259,7 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 python -m unittest discover -s tests -t tests -v
 ```
 
-210 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机、写确认帧等待、临时预览握手），不需要设备。
+237 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机、写确认帧等待、临时预览握手、预设导入导出与退出码），不需要设备。
 
 ## 许可证
 

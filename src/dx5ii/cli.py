@@ -34,6 +34,7 @@ from .bands import (
     live_words,
     parse_apo_filters,
     parse_apo_preamp,
+    render_apo,
 )
 from .constants import (
     CMD_CONNECT_STATE,
@@ -219,6 +220,13 @@ def build_parser() -> argparse.ArgumentParser:
         target.add_argument("--path", help="explicit HID path (interface 2)")
         add_trace(target)
 
+    def add_switch(target: argparse.ArgumentParser) -> None:
+        group = target.add_mutually_exclusive_group()
+        group.add_argument("--activate", action="store_true",
+                           help="stay on the new preset (the default)")
+        group.add_argument("--no-switch", action="store_true",
+                           help="go back to the preset that was active before")
+
     p_status = sub.add_parser("status", help="print the device state",
                               description="Read and print the device state; "
                                           "same output as `dx5ii` with no "
@@ -322,12 +330,32 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument("--from-apo", metavar="FILE",
                         help="read the Filter lines of the section named after "
                              "this device in an Equalizer APO config")
-    p_pcreate.add_argument("--activate", action="store_true",
-                           help="keep the new preset active (default: restore "
-                                "whatever was active before)")
     p_pcreate.add_argument("--json", action="store_true")
     p_pcreate.add_argument("--path")
+    add_switch(p_pcreate)
     add_trace(p_pcreate)
+
+    p_pimport = peq_sub.add_parser(
+        "import", help="create a preset from an Equalizer APO file")
+    p_pimport.add_argument("file", metavar="FILE",
+                           help="Equalizer APO file")
+    p_pimport.add_argument("--name",
+                           help="preset name (default: the file name)")
+    add_common(p_pimport)
+    add_switch(p_pimport)
+
+    p_pcopy = peq_sub.add_parser(
+        "copy", help="create a preset from another preset")
+    p_pcopy.add_argument("source", help="preset to copy")
+    p_pcopy.add_argument("name", help="new preset name")
+    add_common(p_pcopy)
+    add_switch(p_pcopy)
+
+    p_pexport = peq_sub.add_parser(
+        "export", help="write a preset as Equalizer APO text")
+    p_pexport.add_argument("preset", help="preset name or index")
+    p_pexport.add_argument("file", metavar="FILE", help="file to write")
+    add_common(p_pexport)
 
     p_pdel = peq_sub.add_parser("delete", help="delete a preset")
     p_pdel.add_argument("preset", help="preset name or index")
@@ -814,7 +842,10 @@ def _emit(payload: Any, text: list[str], as_json: bool) -> None:
 
 def _load_apo(path: str, product: Optional[str]) -> tuple[list[Band], Optional[float]]:
     """Read an Equalizer APO file and return its bands and preamp."""
-    text = io.open(path, encoding="utf-8", errors="replace").read()
+    try:
+        text = io.open(path, encoding="utf-8", errors="replace").read()
+    except OSError as exc:
+        raise ValueError("cannot read %s: %s" % (path, exc.strerror or exc))
     bands = parse_apo_filters(text, device=product)
     if not bands:
         raise ValueError("no filters parsed from %s" % path)
@@ -849,7 +880,7 @@ def _peq_preview(dev, args, presets, preset_blocks, as_json) -> int:
             preset = _apo_preset(args.from_apo, dev.info.get("product"),
                                  args.from_apo.rsplit("/", 1)[-1].rsplit("\\", 1)[-1])
         except ValueError as exc:
-            return _fail("error: %s" % exc)
+            return _fail("error: %s" % exc, ExitCode.USAGE)
     elif args.preset:
         preset = _resolve_preset(presets, args.preset)
         if preset is None:
@@ -942,20 +973,30 @@ def _peq_create(dev, args, presets, preset_blocks, as_json) -> int:
         try:
             left, preamp = _load_apo(args.from_apo, dev.info.get("product"))
         except ValueError as exc:
-            return _fail("error: %s" % exc)
+            return _fail("error: %s" % exc, ExitCode.USAGE)
         right = list(left)
         if preamp is not None:
             word = encode_preamp(preamp)
             head = [1, word, 1, word]
 
+    if args.from_apo:
+        _warn("peq create --from-apo", "use 'dx5ii peq import FILE --name NAME'")
+    if args.copy:
+        _warn("peq create --copy", "use 'dx5ii peq copy SRC NAME'")
+
     index = create_preset(dev, name, left, right, head=head)
-    # Creating a preset makes the device activate it; put the old one back
-    # unless the caller asked for the new one.
-    if not args.activate:
+    return _finish_create(dev, args, presets, name, index, len(left), as_json)
+
+
+def _finish_create(dev, args, presets, name, index, bands, as_json) -> int:
+    """Common tail of create/import/copy: optional switch back, verify, report."""
+    switched_back = False
+    if getattr(args, "no_switch", False):
         now = dev.current_config_index()
         if now != presets.get("stored_index"):
             dev.send(CMD_SWITCH_MCU_CONFIG, presets.get("stored_index") or 0, PT_WRITE)
             time.sleep(0.15)
+            switched_back = True
     after = read_presets(dev)
     found = find_preset(after, name)
     report = {
@@ -964,13 +1005,80 @@ def _peq_create(dev, args, presets, preset_blocks, as_json) -> int:
         "found": found is not None,
         "count_before": presets.get("count"),
         "count_after": after.get("count"),
-        "bands": len(left),
+        "bands": bands,
         "stored_index": after.get("stored_index"),
+        "switched_back": switched_back,
     }
-    _emit(report, ["created %r at index %d (count %s -> %s)"
-                   % (name, index, report["count_before"],
-                      report["count_after"])], as_json)
-    return 0 if report["found"] else 3
+    text = ["created %r at index %d (count %s -> %s)"
+            % (name, index, report["count_before"], report["count_after"])]
+    if switched_back:
+        text.append("  went back to slot %s (%s)"
+                    % (after.get("stored_index"), after.get("stored_name")))
+    else:
+        text.append("  now playing slot %d (%s)" % (index, name))
+    _emit(report, text, as_json)
+    return int(ExitCode.OK) if report["found"] else int(ExitCode.MISMATCH)
+
+
+def _peq_import(dev, args, presets, preset_blocks, as_json) -> int:
+    raw = args.name or args.file.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+    name = raw.strip()
+    if not name:
+        return _fail("error: empty preset name", ExitCode.USAGE)
+    if len(name.encode("utf-8")) > CONFIG_NAME_WORDS * 4:
+        return _fail("error: name longer than %d UTF-8 bytes"
+                     % (CONFIG_NAME_WORDS * 4), ExitCode.USAGE)
+    if find_preset(presets, name):
+        return _fail("error: preset %r already exists; refusing to overwrite "
+                     "an existing preset" % name, ExitCode.USAGE)
+    try:
+        left, preamp = _load_apo(args.file, dev.info.get("product"))
+    except ValueError as exc:
+        return _fail("error: %s" % exc, ExitCode.USAGE)
+    right = list(left)
+    head = None
+    if preamp is not None:
+        word = encode_preamp(preamp)
+        head = [1, word, 1, word]
+    index = create_preset(dev, name, left, right, head=head)
+    return _finish_create(dev, args, presets, name, index, len(left), as_json)
+
+
+def _peq_copy(dev, args, presets, preset_blocks, as_json) -> int:
+    name = args.name.strip()
+    if not name:
+        return _fail("error: empty preset name", ExitCode.USAGE)
+    if len(name.encode("utf-8")) > CONFIG_NAME_WORDS * 4:
+        return _fail("error: name longer than %d UTF-8 bytes"
+                     % (CONFIG_NAME_WORDS * 4), ExitCode.USAGE)
+    if find_preset(presets, name):
+        return _fail("error: preset %r already exists; refusing to overwrite "
+                     "an existing preset" % name, ExitCode.USAGE)
+    source = _resolve_preset(presets, args.source)
+    if source is None:
+        return _fail("error: no preset %r to copy" % args.source)
+    left, right = _used_bands(source)
+    head = [1, encode_preamp(source["preamp_left"]),
+            1, encode_preamp(source["preamp_right"])]
+    index = create_preset(dev, name, left, right, head=head)
+    return _finish_create(dev, args, presets, name, index, len(left), as_json)
+
+
+def _peq_export(dev, args, presets, preset_blocks, as_json) -> int:
+    preset = _resolve_preset(presets, args.preset)
+    if preset is None:
+        return _fail("error: no preset %r" % args.preset)
+    text = render_apo(preset)
+    try:
+        with io.open(args.file, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+    except OSError as exc:
+        return _fail("error: cannot write %s: %s" % (args.file, exc))
+    used = sum(1 for band in preset["bands_left"] if band["enabled"])
+    report = {"exported": preset["name"], "path": args.file, "bands": used}
+    _emit(report, ["exported %r to %s (%d bands)"
+                   % (preset["name"], args.file, used)], as_json)
+    return int(ExitCode.OK)
 
 
 def _peq_delete(dev, args, presets, preset_blocks, as_json) -> int:
@@ -1051,7 +1159,7 @@ def _peq_overwrite(dev, args, presets, preset_blocks, as_json) -> int:
             preset = _apo_preset(args.from_apo, dev.info.get("product"),
                                  target["name"])
         except ValueError as exc:
-            return _fail("error: %s" % exc)
+            return _fail("error: %s" % exc, ExitCode.USAGE)
         source_label = "apo:%s" % base
 
     words = live_words(preset)
@@ -1141,6 +1249,9 @@ _PEQ_COMMANDS = {
     "list": _peq_list,
     "show": _peq_show,
     "create": _peq_create,
+    "import": _peq_import,
+    "copy": _peq_copy,
+    "export": _peq_export,
     "delete": _peq_delete,
     "rename": _peq_rename,
     "overwrite": _peq_overwrite,

@@ -73,6 +73,9 @@ a note says it is stored but not applied. This is the same information as
 ```
 dx5ii peq list
 dx5ii peq show <preset>
+dx5ii peq import <file> [--name <name>]
+dx5ii peq copy <preset> <name>
+dx5ii peq export <preset> <file>
 dx5ii peq create <name> [--copy <preset>] [--from-apo FILE]
 dx5ii peq delete <preset> [--switch <preset>]
 dx5ii peq rename <preset> <new-name>

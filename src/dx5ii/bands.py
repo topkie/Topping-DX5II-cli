@@ -389,6 +389,61 @@ def live_words(preset: dict[str, Any]) -> list[tuple[int, int]]:
     return words
 
 
+APO_QUANTIZED_NOTE = (
+    "# gains are quantized to 0.1 dB and Q to 4 decimals by the device"
+)
+
+
+def _apo_gain(value: float) -> str:
+    return "0.0" if round(value, 1) == 0 else "%+.1f" % value
+
+
+def _apo_line(index: int, band: dict) -> str:
+    return "Filter %d: %s %s Fc %d Hz Gain %s dB Q %.4f" % (
+        index,
+        "ON" if band.get("enabled", True) else "OFF",
+        band.get("type", "PK"),
+        round(band.get("freq_hz", 0)),
+        _apo_gain(band.get("gain_db", 0)),
+        band.get("q", 0),
+    )
+
+
+def render_apo(preset: dict) -> str:
+    """Render a preset as Equalizer APO text.
+
+    Equalizer APO carries one ``Preamp`` and one filter list for both
+    channels, so a preset that differs per channel is written from the left
+    one and every difference is listed in a comment.
+    """
+    left = preset.get("bands_left") or []
+    right = preset.get("bands_right") or []
+    preamp_l = preset.get("preamp_left", 0.0)
+    preamp_r = preset.get("preamp_right", 0.0)
+
+    lines = [APO_QUANTIZED_NOTE]
+    if round(preamp_l, 1) != round(preamp_r, 1):
+        lines.append("# preamps differ per channel: left %s dB, right %s dB"
+                     % (_apo_gain(preamp_l), _apo_gain(preamp_r)))
+    lines.append("Preamp: %s dB" % _apo_gain(preamp_l))
+
+    differences: list[str] = []
+    for i in range(max(len(left), len(right))):
+        band_l = left[i] if i < len(left) else None
+        band_r = right[i] if i < len(right) else None
+        if band_l is not None:
+            lines.append(_apo_line(i + 1, band_l))
+        if band_r is not None and band_r != band_l:
+            differences.append("# right channel differs: %s"
+                               % _apo_line(i + 1, band_r))
+        elif band_l is None and band_r is not None:
+            differences.append("# right channel only: %s"
+                               % _apo_line(i + 1, band_r))
+
+    lines.extend(differences)
+    return "\n".join(lines) + "\n"
+
+
 __all__ = [
     "Band",
     "PREAMP_COMMANDS",
@@ -403,4 +458,5 @@ __all__ = [
     "live_words",
     "parse_apo_filters",
     "parse_apo_preamp",
+    "render_apo",
 ]
