@@ -127,6 +127,19 @@ def _print_rows(title: str, rows: Iterable[tuple[str, Any]]) -> None:
             print(f"  {key:<26} {format_value(key, value)}")
 
 
+def print_frames(frames: list[dict[str, Any]]) -> None:
+    """Print the frame log behind ``status --frames``."""
+    if not frames:
+        return
+    seconds = frames[-1].get("ms", 0.0) / 1000.0
+    print("frames  %d in %.2f s" % (len(frames), seconds))
+    for item in frames:
+        print(" %5.1f  %s %2d/%d  data=0x%08X"
+              % (item.get("ms", 0.0), item.get("cmd", "0x----"),
+                 item.get("cur", 0), item.get("total", 0),
+                 item.get("data", 0)))
+
+
 def print_snapshot(snap: dict[str, Any]) -> None:
     """Print a full snapshot in the same grouping ``dx5ii get`` uses."""
     device = snap.get("device") or {}
@@ -177,14 +190,7 @@ def print_snapshot(snap: dict[str, Any]) -> None:
     elif settings is not None:
         print("[eq configs] skipped")
 
-    frames = snap.get("frames") or []
-    if frames:
-        print("[frames]")
-        for item in frames:
-            text = item.get("hex", "")
-            if len(text) > 34:
-                text = text[:34] + "..."
-            print("  %8.1f ms  %s" % (item.get("t_ms", 0.0), text))
+    print_frames(snap.get("frames") or [])
 
 
 def _state_line(label: str, state: dict[str, Any]) -> str:
@@ -245,6 +251,7 @@ __all__ = [
     "format_preamp",
     "format_value",
     "print_configs",
+    "print_frames",
     "print_snapshot",
     "print_switch_report",
     "print_field_rows",

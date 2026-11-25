@@ -59,7 +59,7 @@ class PeqPowerTests(unittest.TestCase):
     def test_silent_device_is_reported_as_a_mismatch(self) -> None:
         code, out = self._run(False, False, True)
         self.assertEqual(code, cli.ExitCode.MISMATCH)
-        self.assertIn("device still reports off", out)
+        self.assertIn("was not confirmed (device reports off)", out)
 
     def test_json_shape(self) -> None:
         dev = FakeDev(False, True)

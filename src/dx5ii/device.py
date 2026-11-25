@@ -49,9 +49,10 @@ from .constants import (
     SETTINGS_MIN_WORDS,
     VID,
 )
-from .errors import Dx5iiError
+from .errors import Dx5iiError, Dx5iiTimeout
 from .fields import resolve_output
 from .interpreter import (
+    decode_frame_hex,
     collect_words,
     interpret_config_upload,
     interpret_identity,
@@ -141,6 +142,7 @@ class Dx5ii:
         self._hid = hid
         self._dev: Any = None
         self.raw_frames: list[dict[str, Any]] = []
+        self.frames: list[dict[str, Any]] = []
         self.keep_raw: bool = False
         self._raw_origin = time.monotonic()
         #: Terminal state of the most recent :meth:`_collect` session.
@@ -220,13 +222,16 @@ class Dx5ii:
                 f"short HID write for cmd 0x{cmd:04X}: {written!r}")
 
     def _note_raw(self, raw: bytes) -> None:
-        """Record one inbound report with a timestamp relative to the open."""
+        """Record one inbound report in both the new and the legacy shape."""
         origin = getattr(self, "_raw_origin", None)
         if origin is None:
             origin = self._raw_origin = time.monotonic()
-        self.raw_frames.append(
-            {"t_ms": round((time.monotonic() - origin) * 1000, 1),
-             "hex": raw.hex()})
+        elapsed = round((time.monotonic() - origin) * 1000, 1)
+        self.raw_frames.append({"t": round(time.time(), 3), "hex": raw.hex()})
+        decoded = decode_frame_hex(raw.hex())
+        if decoded is None:
+            return
+        self.frames.append({"ms": elapsed, **decoded})
 
     def _parse(self, buf: Any) -> Optional[Frame]:
         """Parse one inbound report, recording it when ``keep_raw`` is on."""
@@ -266,6 +271,9 @@ class Dx5ii:
             if hook is not None:
                 hook(collector)
         self.last_read_state = session.state
+        if session.state is ReadState.TIMED_OUT:
+            raise Dx5iiTimeout(
+                "the device sent no reply for %d ms" % timeout_ms)
         return collector
 
     def read_frame(self, timeout_ms: int = 200) -> Optional[Frame]:
@@ -510,6 +518,7 @@ class Dx5ii:
         """
         self.keep_raw = keep_raw
         self.raw_frames = []
+        self.frames = []
 
         core = self.read_core(
             include_sampling=not light, include_preview=not light)
@@ -550,7 +559,7 @@ class Dx5ii:
             }
 
         if keep_raw:
-            result["frames"] = self.raw_frames
+            result["frames"] = self.frames
             # Kept under the old name until 0.1.2: scripts read it today.
             result["raw_frames"] = self.raw_frames
         return result

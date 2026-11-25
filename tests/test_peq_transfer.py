@@ -121,6 +121,19 @@ class TransferTests(unittest.TestCase):
         self.assertEqual(self.dev.sent, [(cli.CMD_SWITCH_MCU_CONFIG, 1)])
         self.assertIn("went back to slot 1", out)
 
+    def test_read_back_mismatch_exits_three(self) -> None:
+        # The fake device accepts the write but never reports the new preset:
+        # the read-back check must turn that into exit code 3.
+        out = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(io.StringIO()):
+            with mock.patch.object(cli, "create_preset", lambda *a, **k: 2), \
+                    mock.patch.object(cli, "read_presets",
+                                      lambda dev, settle_ms=1600: self.presets):
+                code = cli._peq_import(self.dev, self._args(name="ZIMP"),
+                                       self.presets, [], False)
+        self.assertEqual(code, cli.ExitCode.MISMATCH)
+        self.assertIn("created 'ZIMP'", out.getvalue())
+
     def test_export_writes_apo_text(self) -> None:
         target = os.path.join(self.dir, "out.txt")
         code, out = self._run(

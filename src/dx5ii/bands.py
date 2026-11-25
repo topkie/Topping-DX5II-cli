@@ -431,13 +431,14 @@ def render_apo(preset: dict) -> str:
     for i in range(max(len(left), len(right))):
         band_l = left[i] if i < len(left) else None
         band_r = right[i] if i < len(right) else None
-        if band_l is not None:
-            lines.append(_apo_line(i + 1, band_l))
+        if band_l is None:
+            if band_r is not None:
+                differences.append("# right channel only: %s"
+                                   % _apo_line(i + 1, band_r))
+            continue
+        lines.append(_apo_line(i + 1, band_l))
         if band_r is not None and band_r != band_l:
             differences.append("# right channel differs: %s"
-                               % _apo_line(i + 1, band_r))
-        elif band_l is None and band_r is not None:
-            differences.append("# right channel only: %s"
                                % _apo_line(i + 1, band_r))
 
     lines.extend(differences)

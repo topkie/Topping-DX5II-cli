@@ -1,8 +1,37 @@
 # Commands
 
-Every command accepts `--device PATH` (the HID interface) and `--trace FILE`
+Every command accepts `--path PATH` (the HID interface) and `--trace FILE`
 (write a JSONL log of every byte sent and received). Passing `--json` prints a
 single JSON document instead of text.
+
+## status
+
+```
+dx5ii status [--fast] [--frames] [--json]
+```
+
+Reads the whole state and prints it in groups. `--fast` skips the preset upload
+(about 1.1 s shorter). `--frames` adds the log of every report the read
+consumed, with milliseconds since the device was opened.
+
+## devices
+
+```
+dx5ii devices [--json]
+```
+
+Lists the HID interfaces this unit exposes and marks the one the protocol uses.
+This is the connectivity check: it sends no protocol frames.
+
+## output
+
+```
+dx5ii output <port> [--json]
+```
+
+Switches the output port and reports the state before and after. Ports:
+`all`, `line_single`, `line_balanced`, `line_all`, `hp_single`, `hp_balanced`,
+`hp_all`. Both channels' EQ and volume are remembered per port.
 
 ## dx5ii (no subcommand)
 

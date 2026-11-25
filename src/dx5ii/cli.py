@@ -46,7 +46,7 @@ from .constants import (
     PT_WRITE,
 )
 from .device import Dx5ii, list_interfaces
-from .errors import Dx5iiError
+from .errors import Dx5iiError, Dx5iiTimeout
 from .fields import (FIELD_ACTIONS, FIELD_SPECS, encode_field, field_raw,
                      field_state, resolve_config)
 from .formatting import (
@@ -107,7 +107,8 @@ def _epilog() -> str:
         "fields (%d)\n%s\n\n"
         "actions (%d, no value; fire and forget)\n%s\n\n"
         "manual: dx5ii manual <section>  (sections: %s)\n"
-        "exit codes: 0 ok, 2 device error, 3 write did not take effect"
+        "exit codes: 0 ok, 1 usage error, 2 device error, "
+        "3 write did not take effect, 4 no reply in time"
         % (len(FIELD_SPECS), fields, len(FIELD_ACTIONS), actions,
            ", ".join(_MANUAL_SECTIONS))
     )
@@ -217,8 +218,12 @@ def build_parser() -> argparse.ArgumentParser:
                                  "PATH as JSON lines")
 
     def add_common(target: argparse.ArgumentParser) -> None:
-        target.add_argument("--json", action="store_true", help="emit JSON")
-        target.add_argument("--path", help="explicit HID path (interface 2)")
+        # SUPPRESS: a subcommand that does not mention the flag must not
+        # overwrite what was already parsed in front of the subcommand.
+        target.add_argument("--json", action="store_true",
+                            default=argparse.SUPPRESS, help="emit JSON")
+        target.add_argument("--path", default=argparse.SUPPRESS,
+                            help="explicit HID path (interface 2)")
         add_trace(target)
 
     def add_switch(target: argparse.ArgumentParser) -> None:
@@ -228,10 +233,12 @@ def build_parser() -> argparse.ArgumentParser:
         group.add_argument("--no-switch", action="store_true",
                            help="go back to the preset that was active before")
 
-    p_status = sub.add_parser("status", help="print the device state",
-                              description="Read and print the device state; "
-                                          "same output as `dx5ii` with no "
-                                          "subcommand.")
+    p_status = sub.add_parser(
+        "status", help="print the device state",
+        description="Read and print the device state; same output as `dx5ii` "
+                    "with no subcommand.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=_epilog())
     p_status.add_argument("--fast", action="store_true",
                           help="skip the EQ preset list")
     p_status.add_argument("--frames", action="store_true",
@@ -253,7 +260,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_get = sub.add_parser("get", help="print current state",
                            description="Print named fields. The field list "
-                                       "is at the bottom of `dx5ii --help`.")
+                                       "is at the bottom of `dx5ii status "
+                                       "--help`.")
     p_get.add_argument("fields", nargs="*", metavar="field",
                        help="field names (default: all)")
     add_common(p_get)
@@ -261,7 +269,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_set = sub.add_parser("set", help="write one or more fields, then read back",
                            description="Write fields, then read them back. The "
                                        "field list is at the bottom of "
-                                       "`dx5ii --help`.")
+                                       "`dx5ii status --help`.")
     p_set.add_argument("pairs", nargs="+", metavar="field value")
     add_common(p_set)
 
@@ -328,7 +336,8 @@ def build_parser() -> argparse.ArgumentParser:
                                             "`dx5ii set peq off`.")
     add_common(p_poff)
 
-    p_plist = peq_sub.add_parser("list", help="list presets with band counts")
+    p_plist = peq_sub.add_parser(
+        "list", help="same view as the bare peq command")
     add_common(p_plist)
 
     p_pshow = peq_sub.add_parser("show", help="print one preset's bands")
@@ -502,7 +511,7 @@ def _cmd_set(path: Optional[str], pairs: Sequence[str], as_json: bool,
             try:
                 encoded.append((name, value,
                                 list(encode_field(name, value, before["settings"]))))
-            except Dx5iiError as exc:
+            except (Dx5iiError, ValueError) as exc:
                 return _fail("error: %s" % exc, ExitCode.USAGE)
 
         echoes: dict[str, bool] = {}
@@ -935,24 +944,6 @@ def _peq_preview(dev, args, presets, preset_blocks, as_json) -> int:
     return 0 if ok else 3
 
 
-def _peq_list(dev, args, presets, preset_blocks, as_json) -> int:
-    rows = []
-    for preset in presets["presets"]:
-        used = sum(1 for b in preset["bands_left"] if b["enabled"])
-        mark = "<- stored" if preset["stored_current"] else ""
-        if not preset.get("enabled_left", True):
-            mark = (mark + "  L disabled").strip()
-        rows.append("  %d  %-24s %2d bands  preamp %s %s"
-                    % (preset["index"], preset["name"], used,
-                       format_preamp(preset["preamp_left"],
-                                     preset["preamp_right"]), mark))
-    _emit(presets, ["stored=%s (%s) count=%s"
-                    % (presets.get("stored_index"),
-                       presets.get("stored_name"),
-                       presets.get("count"))] + rows, as_json)
-    return 0
-
-
 def _peq_show(dev, args, presets, preset_blocks, as_json) -> int:
     preset = _resolve_preset(presets, args.preset)
     if preset is None:
@@ -966,11 +957,9 @@ def _peq_show(dev, args, presets, preset_blocks, as_json) -> int:
 
 def _peq_create(dev, args, presets, preset_blocks, as_json) -> int:
     name = args.name.strip()
-    if not name:
-        return _fail("error: empty preset name", ExitCode.USAGE)
-    if len(name.encode("utf-8")) > CONFIG_NAME_WORDS * 4:
-        return _fail("error: name longer than %d UTF-8 bytes"
-                     % (CONFIG_NAME_WORDS * 4), ExitCode.USAGE)
+    problem = _check_new_name(name)
+    if problem is not None:
+        return problem
     if find_preset(presets, name):
         return _fail("error: preset %r already exists; refusing to overwrite "
                      "an existing preset" % name, ExitCode.USAGE)
@@ -1000,6 +989,23 @@ def _peq_create(dev, args, presets, preset_blocks, as_json) -> int:
 
     index = create_preset(dev, name, left, right, head=head)
     return _finish_create(dev, args, presets, name, index, len(left), as_json)
+
+
+#: ``peq on`` and ``peq off`` are commands, so a preset cannot be called that.
+_RESERVED_PRESET_NAMES = ("on", "off")
+
+
+def _check_new_name(name: str) -> Optional[int]:
+    """Return an exit code when ``name`` cannot become a preset, else None."""
+    if not name:
+        return _fail("error: empty preset name", ExitCode.USAGE)
+    if len(name.encode("utf-8")) > CONFIG_NAME_WORDS * 4:
+        return _fail("error: name longer than %d UTF-8 bytes"
+                     % (CONFIG_NAME_WORDS * 4), ExitCode.USAGE)
+    if name.casefold() in _RESERVED_PRESET_NAMES:
+        return _fail("error: %r is a peq command; pick another preset name"
+                     % name, ExitCode.USAGE)
+    return None
 
 
 def _finish_create(dev, args, presets, name, index, bands, as_json) -> int:
@@ -1037,11 +1043,9 @@ def _finish_create(dev, args, presets, name, index, bands, as_json) -> int:
 def _peq_import(dev, args, presets, preset_blocks, as_json) -> int:
     raw = args.name or args.file.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
     name = raw.strip()
-    if not name:
-        return _fail("error: empty preset name", ExitCode.USAGE)
-    if len(name.encode("utf-8")) > CONFIG_NAME_WORDS * 4:
-        return _fail("error: name longer than %d UTF-8 bytes"
-                     % (CONFIG_NAME_WORDS * 4), ExitCode.USAGE)
+    problem = _check_new_name(name)
+    if problem is not None:
+        return problem
     if find_preset(presets, name):
         return _fail("error: preset %r already exists; refusing to overwrite "
                      "an existing preset" % name, ExitCode.USAGE)
@@ -1060,11 +1064,9 @@ def _peq_import(dev, args, presets, preset_blocks, as_json) -> int:
 
 def _peq_copy(dev, args, presets, preset_blocks, as_json) -> int:
     name = args.name.strip()
-    if not name:
-        return _fail("error: empty preset name", ExitCode.USAGE)
-    if len(name.encode("utf-8")) > CONFIG_NAME_WORDS * 4:
-        return _fail("error: name longer than %d UTF-8 bytes"
-                     % (CONFIG_NAME_WORDS * 4), ExitCode.USAGE)
+    problem = _check_new_name(name)
+    if problem is not None:
+        return problem
     if find_preset(presets, name):
         return _fail("error: preset %r already exists; refusing to overwrite "
                      "an existing preset" % name, ExitCode.USAGE)
@@ -1249,20 +1251,21 @@ def _peq_power(dev, args, wanted: bool, as_json: bool) -> int:
     changed = before is not wanted
     if changed:
         dev.send(CMD_PEQ_STATE, 1 if wanted else 0, PT_WRITE, 1, 1)
-        wait = getattr(dev, "wait_for_frame", None)
-        if wait is not None:
-            wait(CMD_PEQ_STATE, lambda frame: (frame["data"] != 0) == wanted,
-                 timeout_ms=300)
-        else:
-            time.sleep(0.2)
+        # The write echoes at once but the state frame (0x7132 again, or
+        # 0x7134) trails it; the read-back below is the real check.
+        time.sleep(0.25)
     after = (dev.snapshot(include_configs=False).get("pushed") or {}).get("peq_enabled")
     confirmed = after is wanted
     report = {"peq": wanted, "before": before, "changed": changed,
               "confirmed": confirmed}
     name = "on" if wanted else "off"
-    line = "peq %s" % name if changed else "peq already %s" % name
     if not confirmed:
-        line += " (device still reports %s)" % ("on" if after else "off")
+        line = ("peq %s was not confirmed (device reports %s)"
+                % (name, "on" if after else "off"))
+    elif changed:
+        line = "peq %s" % name
+    else:
+        line = "peq already %s" % name
     _emit(report, [line], as_json)
     return int(ExitCode.OK) if confirmed else int(ExitCode.MISMATCH)
 
@@ -1284,7 +1287,6 @@ def _peq_switch(dev, args, snap, as_json) -> int:
 
 _PEQ_COMMANDS = {
     "preview": _peq_preview,
-    "list": _peq_list,
     "show": _peq_show,
     "create": _peq_create,
     "import": _peq_import,
@@ -1372,6 +1374,9 @@ def _read_snapshot(args: argparse.Namespace) -> int:
             else:
                 snap = dev.snapshot(include_configs=not fast, keep_raw=raw)
                 report = None
+    except Dx5iiTimeout as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return int(ExitCode.TIMEOUT)
     except Dx5iiError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return int(ExitCode.DEVICE)
@@ -1437,10 +1442,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(argv)
+    for name, default in (("json", False), ("path", None), ("trace", None)):
+        if not hasattr(args, name):
+            setattr(args, name, default)
 
     if args.command:
         try:
             return _run_subcommand(args)
+        except Dx5iiTimeout as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return int(ExitCode.TIMEOUT)
         except Dx5iiError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return int(ExitCode.DEVICE)

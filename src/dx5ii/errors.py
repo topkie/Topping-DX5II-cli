@@ -7,4 +7,8 @@ class Dx5iiError(RuntimeError):
     """Raised for transport failures and unusable field values."""
 
 
-__all__ = ["Dx5iiError"]
+class Dx5iiTimeout(Dx5iiError):
+    """The device sent nothing back before the read deadline."""
+
+
+__all__ = ["Dx5iiError", "Dx5iiTimeout"]

@@ -51,6 +51,8 @@ python -m dx5ii get
 dx5ii                                   # 读全状态（含 EQ 预设列表）
 dx5ii --fast                            # 同上，跳过预设列表
 dx5ii --json                            # 输出 JSON
+dx5ii status --frames                   # 状态 + 本次读到的每一帧（相对毫秒）
+dx5ii devices                           # 与 --devices 相同的接口列表
 dx5ii --devices                         # 枚举 HID 接口（含固件版本），标出协议口
 dx5ii --set-output hp_balanced          # 只切输出端口，然后读回
 dx5ii peq on                            # 打开 EQ（等同 set peq on）
@@ -262,7 +264,7 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 python -m unittest discover -s tests -t tests -v
 ```
 
-249 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机、写确认帧等待、临时预览握手、预设导入导出与退出码），不需要设备。
+265 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机、写确认帧等待、临时预览握手、预设导入导出与退出码），不需要设备。
 
 ## 许可证
 

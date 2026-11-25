@@ -59,19 +59,22 @@ exact read-back of a fractional value is not expected.
 dx5ii peq import eq.txt
 dx5ii peq import eq.txt --name "Desk"
 dx5ii peq copy SPEAKER "Desk"
-dx5ii peq create "Empty"
 ```
 
 `peq import` reads an Equalizer APO file; the preset name defaults to the file
 name. `peq copy` duplicates an existing preset, which keeps its preamp and its
-per-channel enables. `peq create` makes an empty preset with all bands off.
+per-channel enables.
 
-Both `import` and `copy` refuse a name that already exists — use
-`peq overwrite` to replace a preset. The new preset becomes the one the device
-plays; add `--no-switch` to go back to what was playing before.
+Both refuse a name that already exists — use `peq overwrite` to replace a
+preset. Both also refuse the names `on` and `off`, because `dx5ii peq on` and
+`dx5ii peq off` are commands: a preset with that name could not be addressed.
 
-`peq create --from-apo FILE` and `peq create --copy PRESET` still work but print
-a hint pointing at `import` and `copy`.
+The new preset becomes the one the device plays; add `--no-switch` to go back to
+what was playing before.
+
+`peq create NAME --copy PRESET` and `peq create NAME --from-apo FILE` still work
+but print a hint pointing at `import` and `copy`. A preset always needs one of
+the two sources: there is no command that creates a completely empty preset.
 
 ## Importing an Equalizer APO file
 

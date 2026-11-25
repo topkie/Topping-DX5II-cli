@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Optional, Sequence
 
+from .protocol import parse_frame
+
 from .constants import (
     AUTO_SCREEN_TIMEOUT_RAW,
     CMD_CONFIG_BLOCK,
@@ -360,8 +362,26 @@ def interpret_config_blocks(frames: Iterable[Frame]) -> dict[str, Any]:
     }
 
 
+def decode_frame_hex(text: str) -> Optional[dict[str, Any]]:
+    """Decode one recorded report into the fields ``frames[]`` carries."""
+    try:
+        raw = bytes.fromhex(text)
+    except ValueError:
+        return None
+    frame = parse_frame(raw)
+    if frame is None:
+        return None
+    return {
+        "cmd": "0x%04X" % frame["cmd"],
+        "cur": frame["index"],
+        "total": frame["total"],
+        "data": frame["data"],
+    }
+
+
 __all__ = [
     "collect_words",
+    "decode_frame_hex",
     "interpret_settings",
     "interpret_sampling",
     "format_version",
