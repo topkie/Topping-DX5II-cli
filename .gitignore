@@ -11,3 +11,4 @@ venv/
 *.log
 build-env-*/
 build-requirements-*.txt
+.codegraph/
