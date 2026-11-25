@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Optional, Sequence
 
 from .actions import apply_changes, state_summary
-from .interpreter import interpret_settings
+from .interpreter import collect_words, interpret_settings
 from .bands import (
     CONFIG_NAME_WORDS,
     DEVICE_NAME_MAX_BYTES,
@@ -911,25 +911,26 @@ def _cmd_scene(args: argparse.Namespace) -> int:
     try:
         with _open(getattr(args, "path", None), getattr(args, "trace", None)) as dev:
             if args.action == "save":
-                confirmed = dev.save_scene(scene)
+                answered = dev.save_scene(scene)
                 text = ["saved %s" % scene.upper()]
-                if not confirmed:
-                    text.append("the device did not answer; the scene may "
-                                "still have been stored")
-                _emit({"scene": scene, "action": "save", "confirmed": confirmed},
-                      text, as_json)
+                if not answered:
+                    text.append("the device does not acknowledge scene saves; "
+                                "run 'dx5ii scene recall %s' to see what it "
+                                "stored" % scene)
+                _emit({"scene": scene, "action": "save",
+                       "acknowledged": answered}, text, as_json)
                 return 0
 
             before = dev.snapshot(include_configs=False)["settings"]
-            words, pushed = dev.recall_scene(scene)
-            after = (interpret_settings(words) if pushed
-                     else interpret_settings(dev.read_settings()))
+            words, reacted = dev.recall_scene(scene)
+            after = (interpret_settings(words) if words
+                     else interpret_settings(collect_words(dev.read_settings())))
             changed = _settings_diff(before, after)
             payload = {"scene": scene, "action": "recall",
-                       "state_pushed": pushed, "changed": changed}
-            if not pushed:
-                text = ["recalled %s (the device pushed no state; read back "
-                        "on demand)" % scene.upper()]
+                       "reacted": reacted, "changed": changed}
+            if not reacted:
+                text = ["recalled %s (the device showed no reaction; state "
+                        "read anyway)" % scene.upper()]
             elif not changed:
                 text = ["recalled %s: no settings changed" % scene.upper()]
             else:

@@ -71,45 +71,51 @@ def sent_commands(dev) -> list[tuple[int, int]]:
 
 
 class RecallTests(unittest.TestCase):
-    def test_recall_returns_the_pushed_settings(self):
-        dev = make_device(settings_reports())
-        words, pushed = dev.recall_scene("c1", wait_ms=200)
-        self.assertTrue(pushed)
+    def test_recall_reads_the_state_after_the_status_frames(self):
+        reports = [build_frame(0x7102, 0x50, PT_READ, 1, 1)] + settings_reports()
+        dev = make_device(reports)
+        words, reacted = dev.recall_scene("c1", wait_ms=200)
+        self.assertTrue(reacted)
         self.assertEqual(words, list(range(SETTINGS_TOTAL)))
 
     def test_recall_c1_uses_the_first_scene_command(self):
         dev = make_device(settings_reports())
         dev.recall_scene("c1", wait_ms=200)
-        self.assertEqual(sent_commands(dev), [(CMD_CALL_C1, 1)])
+        self.assertIn((CMD_CALL_C1, 1), sent_commands(dev))
 
     def test_recall_c2_uses_the_second_scene_command(self):
         dev = make_device(settings_reports())
         dev.recall_scene("c2", wait_ms=200)
-        self.assertEqual(sent_commands(dev), [(CMD_CALL_C2, 1)])
+        self.assertIn((CMD_CALL_C2, 1), sent_commands(dev))
 
-    def test_silent_device_reports_no_push(self):
+    def test_silent_device_reports_no_reaction(self):
         dev = make_device([])
-        words, pushed = dev.recall_scene("c1", wait_ms=60)
-        self.assertFalse(pushed)
+        words, reacted = dev.recall_scene("c1", wait_ms=60)
+        self.assertFalse(reacted)
         self.assertEqual(words, [])
 
 
 class SaveTests(unittest.TestCase):
-    def test_save_confirms_on_the_pushed_state(self):
-        dev = make_device(settings_reports())
+    def test_any_reply_counts_as_acknowledgement(self):
+        dev = make_device([build_frame(0x1206, 1, PT_READ, 1, 1)])
         self.assertTrue(dev.save_scene("c1", wait_ms=200))
 
     def test_save_c1_and_c2_use_their_own_commands(self):
-        first = make_device(settings_reports())
+        answer = [build_frame(0x1206, 1, PT_READ, 1, 1)]
+        first = make_device(answer)
         first.save_scene("c1", wait_ms=200)
-        second = make_device(settings_reports())
+        second = make_device(answer)
         second.save_scene("c2", wait_ms=200)
         self.assertEqual(sent_commands(first), [(CMD_SAVE_C1, 1)])
         self.assertEqual(sent_commands(second), [(CMD_SAVE_C2, 1)])
 
-    def test_save_without_an_answer_is_not_confirmed(self):
+    def test_silent_device_is_not_acknowledged(self):
         dev = make_device([])
         self.assertFalse(dev.save_scene("c2", wait_ms=60))
+
+    def test_telemetry_alone_is_not_an_answer(self):
+        dev = make_device([build_frame(0x7131, 0, PT_READ, 8, 0)])
+        self.assertFalse(dev.save_scene("c1", wait_ms=60))
 
 
 class SettingsDiffTests(unittest.TestCase):

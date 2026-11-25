@@ -38,6 +38,7 @@ from .constants import (
     CMD_SERIAL_NUMBER,
     CMD_SOFTWARE_VERSION,
     CMD_SWITCH_MCU_CONFIG,
+    CMD_VOLUME,
     CMD_OUTPUT,
     CONFIG_BLOCK_WORDS,
     CONFIG_HEADER_FRAMES,
@@ -88,6 +89,12 @@ _PUSH_SHAPES: Final[tuple[Shape, ...]] = (
 _SETTINGS_SHAPE: Final[Shape] = (CMD_GET_SETTINGS, SETTINGS_FRAME_TOTAL)
 _SAMPLING_SHAPE: Final[Shape] = (CMD_GET_SAMPLING, 1)
 _PREVIEW_SHAPE: Final[Shape] = (CMD_PEQ_PREVIEW, PEQ_PREVIEW_FRAMES)
+
+#: Frames the device emits on its own: vu/fft telemetry, the serial block and
+#: the heartbeat.  They arrive whether or not the host did anything, so they
+#: must not be mistaken for an answer to a write.
+_BACKGROUND_CMDS: Final[frozenset[int]] = frozenset(
+    {0x7130, 0x7131, CMD_SERIAL_NUMBER, 0x7134})
 
 #: The four identity replies, read on request (no push session needed).
 _IDENTITY_SHAPES: Final[tuple[Shape, ...]] = (
@@ -355,36 +362,46 @@ class Dx5ii:
 
     # -- scenes ------------------------------------------------------------
 
-    def recall_scene(self, scene: str, wait_ms: int = 900) -> tuple[list[int], bool]:
-        """Restore scene ``C1``/``C2`` and return ``(settings words, pushed)``.
+    def recall_scene(self, scene: str, wait_ms: int = 800) -> tuple[list[int], bool]:
+        """Restore scene ``C1``/``C2`` and return ``(settings words, reacted)``.
 
-        The unit answers a recall by pushing the whole settings block, so the
-        new state arrives without a second request.  When nothing comes back
-        ``pushed`` is False and the caller should read the state itself -- the
-        device only stays silent if the scene already matched, which is also a
-        result the caller has to see.
+        A recall makes the device push its per-field status frames (volume,
+        output port, masks...), but **not** the 52-word settings block unless a
+        push session is open, so the full state is read afterwards either way.
+        ``reacted`` says whether the device said anything at all; the words come
+        from an explicit read.
         """
         self.send(CMD_CALL_C1 if scene == "c1" else CMD_CALL_C2,
                   1, PT_WRITE, 1, 1)
+        reacted = False
+        deadline = time.monotonic() + wait_ms / 1000.0
+        while time.monotonic() < deadline:
+            frame = self.read_frame(40)
+            if frame is not None and frame["cmd"] not in _BACKGROUND_CMDS:
+                reacted = True
+                if frame["cmd"] == CMD_VOLUME:
+                    break
         try:
-            collector = self._collect({_SETTINGS_SHAPE: 1}, timeout_ms=wait_ms)
+            return collect_words(self.read_settings()), reacted
         except Dx5iiTimeout:
-            return [], False
-        runs = collector.values(_SETTINGS_SHAPE)
-        return (runs[0] if runs else []), True
+            return [], reacted
 
-    def save_scene(self, scene: str, wait_ms: int = 900) -> bool:
+    def save_scene(self, scene: str, wait_ms: int = 250) -> bool:
         """Store the current state as scene ``C1``/``C2``.
 
-        Returns True when the device answered by pushing the settings block.
+        The firmware does not acknowledge this write: unlike a recall it pushes
+        no settings block, and it does not echo the command either.  A short
+        listen is all the answer there is, so the return value says whether the
+        device said *anything* -- a recall is the only way to see the result.
         """
         self.send(CMD_SAVE_C1 if scene == "c1" else CMD_SAVE_C2,
                   1, PT_WRITE, 1, 1)
-        try:
-            self._collect({_SETTINGS_SHAPE: 1}, timeout_ms=wait_ms)
-        except Dx5iiTimeout:
-            return False
-        return True
+        deadline = time.monotonic() + wait_ms / 1000.0
+        while time.monotonic() < deadline:
+            frame = self.read_frame(30)
+            if frame is not None and frame["cmd"] not in _BACKGROUND_CMDS:
+                return True
+        return False
 
     # -- readers -----------------------------------------------------------
 

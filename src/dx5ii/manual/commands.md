@@ -46,8 +46,8 @@ rest -- taken on the device itself. `recall` restores one, `save` overwrites
 it with the current state.
 
 `recall` reports the settings it changed, because the device cannot say what
-a scene holds. The unit pushes the whole settings block after a recall, so the
-new state arrives without a second request:
+a scene holds. The device acknowledges a recall by pushing its per-field
+status frames; the command then reads the full state to compare:
 
 ```
 $ dx5ii scene recall c1
@@ -55,11 +55,11 @@ recalled C1: 1 setting changed
   volume_db  -30.0 -> -40.0
 ```
 
-When nothing had to change it prints `recalled C1: no settings changed`. If the
-device pushed nothing, the command says so and reads the state explicitly.
+When nothing had to change it prints `recalled C1: no settings changed`.
 
-`save` is confirmed only through that same push. There is no undo: the device
-cannot read a scene back, so an overwritten scene is gone.
+`save` gets no answer from the device at all -- no status frames, no echo --
+so the command says so and points at a recall for verification. There is no
+undo: the device cannot read a scene back, so an overwritten scene is gone.
 
 ## dx5ii (no subcommand)
 
