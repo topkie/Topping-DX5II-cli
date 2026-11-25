@@ -60,15 +60,27 @@ def _stored_text(configs: dict[str, Any]) -> str:
 
 
 def print_configs(configs: dict[str, Any]) -> None:
-    """Print the EQ preset list with the audible source on its own line."""
+    """Print the EQ preset list with the PEQ switch and the audible source.
+
+    With PEQ off nothing is filtered, so ``playing`` would overstate the
+    selected slot: it is reported as stored-but-not-applied instead.
+    """
     playing = configs.get("playing") or {}
-    _print_rows("eq configs", [
-        ("playing", _playing_text(playing)),
-        ("stored", _stored_text(configs)),
-        ("count", configs.get("count")),
-    ])
+    enabled = configs.get("enabled")
+    rows: list[tuple[str, Any]] = []
+    if enabled is not None:
+        rows.append(("enabled", "yes" if enabled else "no"))
+    if enabled is False:
+        rows.append(("playing", "none (PEQ off)"))
+    else:
+        rows.append(("playing", _playing_text(playing)))
+    rows.append(("stored", _stored_text(configs)))
+    rows.append(("count", configs.get("count")))
+    _print_rows("eq configs", rows)
     for slot in configs.get("slots") or []:
-        if playing.get("source") == "local" \
+        if enabled is False:
+            mark = "  selected" if slot.get("stored_current") else ""
+        elif playing.get("source") == "local" \
                 and slot["index"] == playing.get("slot_index"):
             mark = "  <-- playing"
         elif slot.get("stored_current"):
@@ -76,6 +88,9 @@ def print_configs(configs: dict[str, Any]) -> None:
         else:
             mark = ""
         print("  %d  %-18s%s" % (slot["index"], slot["name"], mark))
+    if enabled is False:
+        print("note: PEQ is off; the selected slot is stored but not applied")
+        return
     source = playing.get("source")
     if source == "audition":
         print("note: the device is playing a temporary config; run "
@@ -170,6 +185,8 @@ def _state_line(label: str, state: dict[str, Any]) -> str:
     source = state.get("playing_source")
     if source:
         text += "  playing=%s" % source
+        if source == "local" and state.get("peq_enabled") is False:
+            text += " (PEQ off)"
     return "%s: %s" % (label, text)
 
 

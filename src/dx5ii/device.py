@@ -534,8 +534,11 @@ class Dx5ii:
 
         if include_configs:
             configs = interpret_config_upload(self.read_config_upload())
-            result["configs"] = {"playing": resolve_playing(configs, result["peq"]),
-                                 **configs}
+            result["configs"] = {
+                "playing": resolve_playing(configs, result["peq"]),
+                "enabled": result.get("pushed", {}).get("peq_enabled"),
+                **configs,
+            }
 
         if keep_raw:
             result["raw_frames"] = self.raw_frames

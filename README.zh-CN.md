@@ -248,6 +248,9 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
   `source` 字节和两个哈希；`0x1206` 仍然指设备存储的本地槽位。`configs.playing` 表示实际在放的
   音源（`local`/`cloud`/`audition`/`unknown`），`configs.stored_index`/`stored_name` 表示存储的
   槽位，两者不会混。不是本地槽时 `playing.slot_index` 为 null。
+- **`playing` 说的是选中的槽位，不是滤波在生效**。PEQ 关闭时设备仍然保持一个槽位被选中，此时
+  `configs.enabled` 为 `false`、`playing.source` 仍是 `local`；文本输出会写
+  `playing  none (PEQ off)`，槽位标记为 `selected`。
 
 ## 测试
 

@@ -59,6 +59,7 @@ def state_summary(
         "output_raw": settings.get("output_raw"),
         "input": settings.get("input"),
         "input_raw": settings.get("input_raw"),
+        "peq_enabled": (snap.get("pushed") or {}).get("peq_enabled"),
     }
     if include_slots:
         summary["stored_index"] = configs.get("stored_index")

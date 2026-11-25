@@ -63,7 +63,9 @@ dx5ii configs [--json]
 ```
 
 Prints the presets stored on the device: name, channel preamp, band count, and
-which one is currently stored as active. This is the same information as
+which one is currently stored as active. With PEQ switched off the list says so
+(`enabled no`), the selected slot is marked `selected` instead of `playing`, and
+a note says it is stored but not applied. This is the same information as
 `configs` inside the full read.
 
 ## peq

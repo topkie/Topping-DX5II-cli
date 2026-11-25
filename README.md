@@ -288,6 +288,9 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
   stored local slot. `configs.playing` says what is audible (`local` / `cloud` / `audition` /
   `unknown`) and `configs.stored_index` / `stored_name` say what is stored, so the two cannot be
   confused. `playing.slot_index` is null unless the device plays a local slot.
+- **`playing` names the selected slot, not filtering.** With PEQ switched off the device still keeps
+  a slot selected, so `configs.enabled` is `false` while `playing.source` stays `local`; the text
+  output prints `playing  none (PEQ off)` and marks the slot `selected`.
 
 ## Tests
 

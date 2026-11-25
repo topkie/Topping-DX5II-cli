@@ -53,6 +53,24 @@ class PrintConfigsTests(unittest.TestCase):
         lines = self._render(_configs("audition"))
         self.assertEqual(lines[1], "  playing                    audition config (Unknown)")
 
+    def test_peq_off_reports_stored_but_not_applied(self) -> None:
+        configs = _configs("local", 2, "IER-M7.Harman")
+        configs["enabled"] = False
+        lines = self._render(configs)
+        self.assertEqual(lines[1], "  enabled                    no")
+        self.assertEqual(lines[2], "  playing                    none (PEQ off)")
+        self.assertTrue(any("2  IER-M7.Harman       selected" in l for l in lines))
+        self.assertEqual(lines[-1],
+                         "note: PEQ is off; the selected slot is stored but not applied")
+
+    def test_peq_on_adds_the_enabled_row(self) -> None:
+        configs = _configs("local", 2, "IER-M7.Harman")
+        configs["enabled"] = True
+        lines = self._render(configs)
+        self.assertEqual(lines[1], "  enabled                    yes")
+        self.assertEqual(lines[2], "  playing                    local slot 2 (IER-M7.Harman)")
+        self.assertIn("<-- playing", lines[-1])
+
     def test_unknown_does_not_claim_a_slot(self) -> None:
         lines = self._render(_configs("unknown"))
         self.assertEqual(lines[1], "  playing                    unknown (no preview reply)")
