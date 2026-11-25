@@ -108,6 +108,8 @@ dx5ii raw 0x710C --pt read --total 1    # raw frame with explicit total/cur
 dx5ii watch 5                           # dump unsolicited frames for 5 s
 dx5ii watch -f                          # follow new frames until Ctrl-C (opens the push session)
 dx5ii watch -f --cmd 0x7137 --json      # one JSON object per matching frame
+dx5ii manual                            # the user manual, shipped with the package
+dx5ii manual peq                        # one section; --list shows them all
 ```
 
 `raw` prints the frames the device sends back: each line decodes `cmd`, `pt`, `total`, `cur`
@@ -292,7 +294,7 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-178 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+186 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
 interpretation, the multi-frame collector and read-session state machines, the write
 confirmation wait, the temporary preview handshake). No device needed.
 

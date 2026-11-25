@@ -19,6 +19,7 @@ import sys
 import tempfile
 import textwrap
 import time
+from importlib import resources
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
@@ -80,9 +81,72 @@ def _epilog() -> str:
     return (
         "fields (%d)\n%s\n\n"
         "actions (%d, no value; fire and forget)\n%s\n\n"
+        "manual: dx5ii manual <section>  (sections: %s)\n"
         "exit codes: 0 ok, 2 device error, 3 write did not take effect"
-        % (len(FIELD_SPECS), fields, len(FIELD_ACTIONS), actions)
+        % (len(FIELD_SPECS), fields, len(FIELD_ACTIONS), actions,
+           ", ".join(_MANUAL_SECTIONS))
     )
+
+
+_MANUAL_SECTIONS = (
+    "index",
+    "commands",
+    "fields",
+    "peq",
+    "observe",
+    "troubleshooting",
+)
+
+
+def _manual_text(section: str) -> str:
+    """Read one manual section from the installed package."""
+    try:
+        path = resources.files("dx5ii").joinpath("manual", section + ".md")
+        return path.read_text(encoding="utf-8")
+    except (FileNotFoundError, ModuleNotFoundError, NotADirectoryError) as exc:
+        raise Dx5iiError(
+            "manual section %r is not installed; try --list" % section
+        ) from exc
+
+
+def _manual_fields() -> str:
+    """Render the field table from the encoder table, never from prose."""
+    rows = [
+        "## Field list (generated from the encoder)", "",
+        "| field | kind | values | command |", "|---|---|---|---|",
+    ]
+    for name, spec in FIELD_SPECS.items():
+        cmd, kind, table = spec[0], spec[1], spec[2]
+        if table is None:
+            values = ""
+        elif kind == "mask":
+            values = "bits: " + ", ".join(table)
+        else:
+            values = ", ".join(table)
+        rows.append("| `%s` | %s | %s | `0x%04X` |" % (name, kind, values, cmd))
+    rows.extend(["", "Actions (no value, fire and forget):", ""])
+    for name, cmd in FIELD_ACTIONS.items():
+        rows.append("* `%s` — `0x%04X`" % (name, cmd))
+    return "\n".join(rows)
+
+
+def _cmd_manual(args: argparse.Namespace) -> int:
+    if args.list:
+        print("sections:")
+        for name in _MANUAL_SECTIONS:
+            print("  " + name)
+        return 0
+    section = args.section or "index"
+    if section not in _MANUAL_SECTIONS:
+        return _fail("error: unknown manual section %r; try --list" % section)
+    try:
+        text = _manual_text(section)
+    except Dx5iiError as exc:
+        return _fail("error: %s" % exc)
+    if section == "fields":
+        text = text.rstrip() + "\n\n" + _manual_fields() + "\n"
+    print(text, end="" if text.endswith("\n") else "\n")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -170,6 +234,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_cfg = sub.add_parser("configs", help="list the EQ presets on the device")
     add_common(p_cfg)
+
+    p_manual = sub.add_parser(
+        "manual", help="print a section of the user manual",
+        description="Print a section of the user manual. The same manual is "
+                    "shipped inside the package, so it works without a "
+                    "network connection.",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    p_manual.add_argument("section", nargs="?",
+                          help="section to print (default: index)")
+    p_manual.add_argument("--list", action="store_true",
+                          help="list the sections")
 
     p_peq = sub.add_parser(
         "peq", help="manage EQ presets",
@@ -995,6 +1070,8 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         return _cmd_configs(args.path, args.json, args.trace)
     if args.command == "peq":
         return _cmd_peq(args)
+    if args.command == "manual":
+        return _cmd_manual(args)
     raise AssertionError(f"unhandled command {args.command!r}")
 
 

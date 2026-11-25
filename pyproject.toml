@@ -29,4 +29,4 @@ dev = ["pytest>=8"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-dx5ii = ["py.typed"]
+dx5ii = ["py.typed", "manual/*.md"]

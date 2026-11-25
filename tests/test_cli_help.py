@@ -28,6 +28,10 @@ def walk(parser, path: str = "dx5ii"):
             yield from walk(sub, f"{path} {name}")
 
 
+#: Commands that take no device: they only forward or print static text.
+FORWARDING = {"dx5ii peq", "dx5ii manual"}
+
+
 class HelpSurfaceTests(unittest.TestCase):
     def setUp(self):
         self.parser = build_parser()
@@ -35,12 +39,12 @@ class HelpSurfaceTests(unittest.TestCase):
 
     def test_every_command_can_trace(self):
         missing = [name for name, parser in self.commands
-                   if name != "dx5ii peq" and "--trace" not in options(parser)]
+                   if name not in FORWARDING and "--trace" not in options(parser)]
         self.assertEqual(missing, [], "commands without --trace")
 
     def test_every_command_accepts_an_explicit_path(self):
         missing = [name for name, parser in self.commands
-                   if name != "dx5ii peq" and "--path" not in options(parser)]
+                   if name not in FORWARDING and "--path" not in options(parser)]
         self.assertEqual(missing, [], "commands without --path")
 
     def test_every_field_is_listed_in_the_epilog(self):

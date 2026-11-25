@@ -1,4 +1,4 @@
-# dx5ii
+# Topping DX5 II CLI
 
 [![PyPI](https://img.shields.io/pypi/v/dx5ii-cli.svg)](https://pypi.org/project/dx5ii-cli/)
 [![Python](https://img.shields.io/pypi/pyversions/dx5ii-cli.svg)](https://pypi.org/project/dx5ii-cli/)
@@ -96,6 +96,8 @@ dx5ii raw 0x710C --pt read --total 1    # 带 total/cur 的原始帧
 dx5ii watch 5                           # 监听 5 秒内设备主动推送的帧
 dx5ii watch -f                          # 持续输出新帧，Ctrl-C 退出（会自己开启推送会话）
 dx5ii watch -f --cmd 0x7137 --json      # 每帧一行 JSON，便于管道处理
+dx5ii manual                            # 完整用户手册，随包发布
+dx5ii manual peq                        # 打印某一节；--list 列出全部
 ```
 
 `raw` 打印的是设备回包里的**原始帧**：每条解出 `cmd` / `pt` / `total` / `cur` / `data`，不套用字段解释，也不做单位换算。`0x710C` 的回复是 52 行，`0x7137` 是三行，每一行是一个 32 位字；`data` 同时给出十进制与十六进制。自己发多帧命令时用 `--total` / `--cur` 指定总帧数与序号，设备只接受序号连续的帧。回包比默认 800 ms 更长时用 `--wait MS` 加长收集窗口；`raw` 会先打一行 `tx`，再打设备回包。
@@ -252,7 +254,7 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 python -m unittest discover -s tests -t tests -v
 ```
 
-178 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机、写确认帧等待、临时预览握手），不需要设备。
+186 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机、写确认帧等待、临时预览握手），不需要设备。
 
 ## 许可证
 
