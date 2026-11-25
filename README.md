@@ -66,6 +66,8 @@ dx5ii --set-output hp_balanced          # switch output only, then read back
 dx5ii peq on                            # turn EQ on (same as set peq on)
 dx5ii peq off                           # turn EQ off
 dx5ii peq switch Dynamic                # switch preset by name or index
+dx5ii scene recall c1                   # restore device scene C1, report what changed
+dx5ii scene save c1                     # overwrite C1 with the current state
 dx5ii --set-config Dynamic              # the same, kept as a top-level flag
 dx5ii --set-output hp_balanced --set-config Dynamic
 ```
@@ -304,7 +306,7 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-265 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+279 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
 interpretation, the multi-frame collector and read-session state machines, the write
 confirmation wait, the temporary preview handshake). No device needed.
 

@@ -33,6 +33,34 @@ Switches the output port and reports the state before and after. Ports:
 `all`, `line_single`, `line_balanced`, `line_all`, `hp_single`, `hp_balanced`,
 `hp_all`. Both channels' EQ and volume are remembered per port.
 
+## scene
+
+```
+dx5ii scene recall {c1,c2} [--json]
+dx5ii scene save {c1,c2} [--json]
+```
+
+The unit stores two scenes, `C1` and `C2`. Each is a snapshot of every
+setting it keeps -- volume, ports, screen, EQ selection, crossfeed and the
+rest -- taken on the device itself. `recall` restores one, `save` overwrites
+it with the current state.
+
+`recall` reports the settings it changed, because the device cannot say what
+a scene holds. The unit pushes the whole settings block after a recall, so the
+new state arrives without a second request:
+
+```
+$ dx5ii scene recall c1
+recalled C1: 1 setting changed
+  volume_db  -30.0 -> -40.0
+```
+
+When nothing had to change it prints `recalled C1: no settings changed`. If the
+device pushed nothing, the command says so and reads the state explicitly.
+
+`save` is confirmed only through that same push. There is no undo: the device
+cannot read a scene back, so an overwritten scene is gone.
+
 ## dx5ii (no subcommand)
 
 ```

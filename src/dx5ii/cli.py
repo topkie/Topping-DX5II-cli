@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Optional, Sequence
 
 from .actions import apply_changes, state_summary
+from .interpreter import interpret_settings
 from .bands import (
     CONFIG_NAME_WORDS,
     DEVICE_NAME_MAX_BYTES,
@@ -318,6 +319,17 @@ def build_parser() -> argparse.ArgumentParser:
                           help="list the sections")
     p_manual.add_argument("--markdown", action="store_true",
                           help="print the raw markdown instead of formatted text")
+
+    p_scene = sub.add_parser(
+        "scene", help="recall or save the device scenes C1/C2",
+        description="A scene is a snapshot of every setting the unit stores, "
+                    "taken on the device itself (front panel or remote). "
+                    "recall restores it; save overwrites it with the current "
+                    "state. The device cannot report what a scene holds, so "
+                    "recall reports the settings it changed.")
+    p_scene.add_argument("action", choices=["recall", "save"])
+    p_scene.add_argument("name", choices=["c1", "c2"], metavar="{c1,c2}")
+    add_common(p_scene)
 
     p_peq = sub.add_parser(
         "peq", help="manage EQ presets",
@@ -863,6 +875,78 @@ def _emit(payload: Any, text: list[str], as_json: bool) -> None:
             print(line)
 
 
+def _setting_text(value: Any) -> str:
+    """Render one decoded setting for the change list."""
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if value is None:
+        return "-"
+    return str(value)
+
+
+def _settings_diff(before: dict[str, Any],
+                   after: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the settings that a recall changed, in stable name order.
+
+    Raw companions such as ``volume_raw`` are dropped when the decoded field
+    ``volume_db`` covers them: reporting both would say the same thing twice.
+    """
+    changed = []
+    decoded = set(before) | set(after)
+    for name in sorted(decoded):
+        if name.endswith("_raw"):
+            stem = name[: -len("_raw")]
+            if any(key == stem or key.startswith(stem + "_") for key in decoded):
+                continue
+        old, new = before.get(name), after.get(name)
+        if old != new:
+            changed.append({"field": name, "before": old, "after": new})
+    return changed
+
+
+def _cmd_scene(args: argparse.Namespace) -> int:
+    """Recall or save one of the two device scenes."""
+    scene = args.name
+    as_json = bool(getattr(args, "json", False))
+    try:
+        with _open(getattr(args, "path", None), getattr(args, "trace", None)) as dev:
+            if args.action == "save":
+                confirmed = dev.save_scene(scene)
+                text = ["saved %s" % scene.upper()]
+                if not confirmed:
+                    text.append("the device did not answer; the scene may "
+                                "still have been stored")
+                _emit({"scene": scene, "action": "save", "confirmed": confirmed},
+                      text, as_json)
+                return 0
+
+            before = dev.snapshot(include_configs=False)["settings"]
+            words, pushed = dev.recall_scene(scene)
+            after = (interpret_settings(words) if pushed
+                     else interpret_settings(dev.read_settings()))
+            changed = _settings_diff(before, after)
+            payload = {"scene": scene, "action": "recall",
+                       "state_pushed": pushed, "changed": changed}
+            if not pushed:
+                text = ["recalled %s (the device pushed no state; read back "
+                        "on demand)" % scene.upper()]
+            elif not changed:
+                text = ["recalled %s: no settings changed" % scene.upper()]
+            else:
+                text = ["recalled %s: %d setting%s changed"
+                        % (scene.upper(), len(changed),
+                           "" if len(changed) == 1 else "s")]
+            width = max((len(item["field"]) for item in changed), default=0)
+            for item in changed:
+                text.append("  %-*s  %s -> %s" % (
+                    width, item["field"],
+                    _setting_text(item["before"]), _setting_text(item["after"])))
+            _emit(payload, text, as_json)
+            return 0
+    except Dx5iiError as exc:
+        return _fail("error: %s" % exc)
+
+
 def _load_apo(path: str, product: Optional[str]) -> tuple[list[Band], Optional[float]]:
     """Read an Equalizer APO file and return its bands and preamp."""
     try:
@@ -1356,6 +1440,8 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         return _cmd_peq(args)
     if args.command == "manual":
         return _cmd_manual(args)
+    if args.command == "scene":
+        return _cmd_scene(args)
     raise AssertionError(f"unhandled command {args.command!r}")
 
 

@@ -19,6 +19,10 @@ from typing import Any, Callable, Final, Mapping, Optional, TextIO
 from .constants import (
     CMD_AGREEMENT_CONFIG,
     CMD_BLUETOOTH_STATE,
+    CMD_CALL_C1,
+    CMD_CALL_C2,
+    CMD_SAVE_C1,
+    CMD_SAVE_C2,
     CMD_CONFIG_BLOCK,
     CMD_CROSSFEED_OPTION_MASK,
     CMD_CURRENT_CONFIG,
@@ -348,6 +352,39 @@ class Dx5ii:
             last_progress = time.monotonic()
             if match is None or match(frame):
                 return True
+
+    # -- scenes ------------------------------------------------------------
+
+    def recall_scene(self, scene: str, wait_ms: int = 900) -> tuple[list[int], bool]:
+        """Restore scene ``C1``/``C2`` and return ``(settings words, pushed)``.
+
+        The unit answers a recall by pushing the whole settings block, so the
+        new state arrives without a second request.  When nothing comes back
+        ``pushed`` is False and the caller should read the state itself -- the
+        device only stays silent if the scene already matched, which is also a
+        result the caller has to see.
+        """
+        self.send(CMD_CALL_C1 if scene == "c1" else CMD_CALL_C2,
+                  1, PT_WRITE, 1, 1)
+        try:
+            collector = self._collect({_SETTINGS_SHAPE: 1}, timeout_ms=wait_ms)
+        except Dx5iiTimeout:
+            return [], False
+        runs = collector.values(_SETTINGS_SHAPE)
+        return (runs[0] if runs else []), True
+
+    def save_scene(self, scene: str, wait_ms: int = 900) -> bool:
+        """Store the current state as scene ``C1``/``C2``.
+
+        Returns True when the device answered by pushing the settings block.
+        """
+        self.send(CMD_SAVE_C1 if scene == "c1" else CMD_SAVE_C2,
+                  1, PT_WRITE, 1, 1)
+        try:
+            self._collect({_SETTINGS_SHAPE: 1}, timeout_ms=wait_ms)
+        except Dx5iiTimeout:
+            return False
+        return True
 
     # -- readers -----------------------------------------------------------
 

@@ -58,6 +58,8 @@ dx5ii --set-output hp_balanced          # 只切输出端口，然后读回
 dx5ii peq on                            # 打开 EQ（等同 set peq on）
 dx5ii peq off                           # 关闭 EQ
 dx5ii peq switch Dynamic                # 按名字或索引切换预设
+dx5ii scene recall c1                   # 调用设备上的场景 C1，并报告改了哪些项
+dx5ii scene save c1                     # 用当前状态覆盖场景 C1
 dx5ii --set-config Dynamic              # 同一动作，保留为顶层参数
 dx5ii --set-output hp_balanced --set-config Dynamic
 ```
@@ -264,7 +266,7 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 python -m unittest discover -s tests -t tests -v
 ```
 
-265 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机、写确认帧等待、临时预览握手、预设导入导出与退出码），不需要设备。
+279 个用例，只测纯函数（帧编解码、字段编码、PEQ 块编解码、帧序列解释、云端/本地音源判定、多帧收集状态机、写确认帧等待、临时预览握手、预设导入导出与退出码），不需要设备。
 
 ## 许可证
 
