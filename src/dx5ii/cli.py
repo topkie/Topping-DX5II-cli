@@ -15,6 +15,7 @@ import argparse
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import textwrap
@@ -65,6 +66,7 @@ from .peq import (
     rename_preset,
 )
 from .protocol import format_firmware
+from .textfmt import render_markdown
 
 
 def _open(path: Optional[str] = None, trace: Optional[str] = None) -> Dx5ii:
@@ -145,7 +147,14 @@ def _cmd_manual(args: argparse.Namespace) -> int:
         return _fail("error: %s" % exc)
     if section == "fields":
         text = text.rstrip() + "\n\n" + _manual_fields() + "\n"
-    print(text, end="" if text.endswith("\n") else "\n")
+    if getattr(args, "markdown", False):
+        print(text, end="" if text.endswith("\n") else "\n")
+        return 0
+    columns = shutil.get_terminal_size((80, 24)).columns
+    width = max(60, min(columns, 100))
+    encoding = (getattr(sys.stdout, "encoding", "") or "").lower()
+    print(render_markdown(text, width=width, ascii_only="utf" not in encoding),
+          end="")
     return 0
 
 
@@ -245,6 +254,8 @@ def build_parser() -> argparse.ArgumentParser:
                           help="section to print (default: index)")
     p_manual.add_argument("--list", action="store_true",
                           help="list the sections")
+    p_manual.add_argument("--markdown", action="store_true",
+                          help="print the raw markdown instead of formatted text")
 
     p_peq = sub.add_parser(
         "peq", help="manage EQ presets",

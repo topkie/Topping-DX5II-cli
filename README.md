@@ -110,6 +110,7 @@ dx5ii watch -f                          # follow new frames until Ctrl-C (opens 
 dx5ii watch -f --cmd 0x7137 --json      # one JSON object per matching frame
 dx5ii manual                            # the user manual, shipped with the package
 dx5ii manual peq                        # one section; --list shows them all
+dx5ii manual peq --markdown             # raw markdown instead of terminal text
 ```
 
 `raw` prints the frames the device sends back: each line decodes `cmd`, `pt`, `total`, `cur`
@@ -294,7 +295,7 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-186 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+208 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
 interpretation, the multi-frame collector and read-session state machines, the write
 confirmation wait, the temporary preview handshake). No device needed.
 
