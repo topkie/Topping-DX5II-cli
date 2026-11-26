@@ -140,6 +140,17 @@ class SettingsDiffTests(unittest.TestCase):
             {"volume_db": -40.0, "volume_raw": 80})
         self.assertEqual([item["field"] for item in changed], ["volume_db"])
 
+    def test_mask_companion_is_not_reported_twice(self):
+        changed = _settings_diff(
+            {"crossfeed_conv_options": ["c1"], "crossfeed_conv_option_mask": 1},
+            {"crossfeed_conv_options": ["c2"], "crossfeed_conv_option_mask": 2})
+        self.assertEqual([item["field"] for item in changed],
+                         ["crossfeed_conv_options"])
+
+    def test_bare_mask_stays_when_nothing_decodes_it(self):
+        changed = _settings_diff({"orphan_mask": 1}, {"orphan_mask": 2})
+        self.assertEqual([item["field"] for item in changed], ["orphan_mask"])
+
 
 class SettingTextTests(unittest.TestCase):
     def test_booleans_read_as_yes_and_no(self):

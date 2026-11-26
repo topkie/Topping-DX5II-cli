@@ -909,20 +909,40 @@ def _setting_text(value: Any) -> str:
     return str(value)
 
 
+_MASKED_SUFFIXES = ("_raw", "_mask")
+
+
+def _has_decoded_companion(name: str, decoded: set[str]) -> bool:
+    """Say whether a decoded setting already reports what ``name`` carries.
+
+    ``volume_raw`` is covered by ``volume_db`` and ``input_option_mask`` by
+    ``input_options``, so listing both would say the same thing twice.
+    """
+    for suffix in _MASKED_SUFFIXES:
+        if not name.endswith(suffix):
+            continue
+        stem = name[: -len(suffix)]
+        # ``volume_raw`` -> ``volume_db``; ``input_option_mask`` -> ``input_options``.
+        if any(key == stem or key.startswith(stem + "_")
+               or key.startswith(stem + "s")
+               for key in decoded if key != name):
+            return True
+    return False
+
+
 def _settings_diff(before: dict[str, Any],
                    after: dict[str, Any]) -> list[dict[str, Any]]:
     """Return the settings that a recall changed, in stable name order.
 
-    Raw companions such as ``volume_raw`` are dropped when the decoded field
-    ``volume_db`` covers them: reporting both would say the same thing twice.
+    Raw companions such as ``volume_raw`` or ``input_option_mask`` are dropped
+    when a decoded field covers them (``volume_db``, ``input_options``):
+    reporting both would say the same thing twice.
     """
     changed = []
     decoded = set(before) | set(after)
     for name in sorted(decoded):
-        if name.endswith("_raw"):
-            stem = name[: -len("_raw")]
-            if any(key == stem or key.startswith(stem + "_") for key in decoded):
-                continue
+        if _has_decoded_companion(name, decoded):
+            continue
         old, new = before.get(name), after.get(name)
         if old != new:
             changed.append({"field": name, "before": old, "after": new})
