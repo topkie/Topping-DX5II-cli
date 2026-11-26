@@ -365,11 +365,16 @@ class Dx5ii:
     def recall_scene(self, scene: str, wait_ms: int = 800) -> tuple[list[int], bool]:
         """Restore scene ``C1``/``C2`` and return ``(settings words, reacted)``.
 
-        A recall makes the device push its per-field status frames (volume,
-        output port, masks...), but **not** the 52-word settings block unless a
-        push session is open, so the full state is read afterwards either way.
-        ``reacted`` says whether the device said anything at all; the words come
-        from an explicit read.
+        A recall makes the device push the same twenty status frames every
+        time, whether or not a push session is open: the screen/remote/mask
+        block, theme, input and output, UAC, MCU EQ state, PEQ state, volume,
+        slot index, DC detect, the command echo and the sample rate.  It does
+        **not** push the 52-word settings block, so the full state is read with
+        ``0x710C`` afterwards.  (A web client once showed that block after a
+        recall; it never reproduced, so nothing here depends on it.)
+
+        ``reacted`` says whether any of those status frames arrived at all; the
+        words always come from the explicit read.
         """
         self.send(CMD_CALL_C1 if scene == "c1" else CMD_CALL_C2,
                   1, PT_WRITE, 1, 1)
@@ -389,10 +394,12 @@ class Dx5ii:
     def save_scene(self, scene: str, wait_ms: int = 250) -> bool:
         """Store the current state as scene ``C1``/``C2``.
 
-        The firmware does not acknowledge this write: unlike a recall it pushes
-        no settings block, and it does not echo the command either.  A short
-        listen is all the answer there is, so the return value says whether the
-        device said *anything* -- a recall is the only way to see the result.
+        The firmware acknowledges nothing: over a three-second window it pushed
+        zero frames without a push session and only telemetry with one, and it
+        does not echo the command either.  ``wait_ms`` is therefore just a short
+        listen for any non-background frame; the return value says whether the
+        device said *anything*, not that the scene was stored.  A recall is the
+        only way to see the result.
         """
         self.send(CMD_SAVE_C1 if scene == "c1" else CMD_SAVE_C2,
                   1, PT_WRITE, 1, 1)
