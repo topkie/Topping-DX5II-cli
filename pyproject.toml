@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dx5ii-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "Control a Topping DX5 II over HID: read state, switch output port and EQ preset"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -17,7 +17,7 @@ classifiers = [
     "Operating System :: Microsoft :: Windows",
     "Topic :: Multimedia :: Sound/Audio",
 ]
-dependencies = ["hidapi>=0.14"]
+dependencies = ["hidapi>=0.14", "rich>=13.7,<16"]
 
 [project.scripts]
 dx5ii = "dx5ii.cli:main"

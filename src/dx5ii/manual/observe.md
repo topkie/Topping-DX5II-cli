@@ -14,14 +14,14 @@ Every frame is 17 bytes on the wire, because the HID report has no report ID:
 | offset | meaning |
 |---|---|
 | 0 | HID report ID, always `00` |
-| 1–2 | `22 33`, fixed |
+| 1-2 | `22 33`, fixed |
 | 3 | protocol type |
 | 4 | total frames in this reply |
 | 5 | index of this frame, 0-based |
-| 6–7 | command, big-endian |
-| 8–11 | data, big-endian 32-bit |
-| 12–13 | CRC-16, polynomial `0xA001`, initial value `0xFFFF`, over bytes 3–11 |
-| 14–15 | `66 77`, fixed |
+| 6-7 | command, big-endian |
+| 8-11 | data, big-endian 32-bit |
+| 12-13 | CRC-16, polynomial `0xA001`, initial value `0xFFFF`, over bytes 3-11 |
+| 14-15 | `66 77`, fixed |
 
 Protocol types: `0x10` readNack, `0x11` readAck, `0x20` writeNack, `0x21`
 writeAck. **The device answers every frame with `0x20`**, whichever type was

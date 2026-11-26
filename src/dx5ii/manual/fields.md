@@ -16,7 +16,7 @@ always matches what the program accepts.
 | mask_index | one name; the device gets its index, not its bit | `crossfeed-conv c1` |
 | timeout | `off`, `10s`, `30s`, `60s` | `screen-timeout 30s` |
 | volume | dB, rounded to the device's step | `volume -40.0` |
-| name | 1–8 characters, UTF-8 | `device-name Desk` |
+| name | 1-8 characters, UTF-8 | `device-name Desk` |
 
 `get` prints the name for enums and lists, and the number under a `_raw` key
 when a script needs the device index: `{"output": "hp_balanced", "output_raw": 4}`.
@@ -41,7 +41,7 @@ Other tables:
 
 | field | values |
 |---|---|
-| `pcm-filter` | `f1` … `f8` |
+| `pcm-filter` | `f1` ... `f8` |
 | `line-mode` | `preamp`, `dac` |
 | `uac` | `uac1`, `uac2` |
 | `brightness` | `low`, `medium`, `high` (the automatic step is not reachable) |
@@ -54,7 +54,7 @@ Other tables:
 | `home-page` | `normal`, `vu`, `fft` |
 | `crossfeed-type` | `convolution`, `simple`, `off` |
 | `crossfeed-conv` | `c1`, `c2` |
-| `crossfeed-simple` | `s1` … `s4` |
+| `crossfeed-simple` | `s1` ... `s4` |
 | `screen-timeout` | `off`, `10s`, `30s`, `60s` |
 
 ## Two masks that are easy to confuse

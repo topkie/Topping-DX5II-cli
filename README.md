@@ -306,7 +306,7 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 python -m unittest discover -s tests -t tests -v
 ```
 
-279 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
+261 cases, pure functions only (frame codec, field encoding, PEQ block codec, sequence
 interpretation, the multi-frame collector and read-session state machines, the write
 confirmation wait, the temporary preview handshake). No device needed.
 

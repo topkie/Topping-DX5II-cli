@@ -29,14 +29,14 @@ class SectionTests(unittest.TestCase):
     def test_default_is_the_index(self):
         code, out, _ = run()
         self.assertEqual(code, 0)
-        self.assertIn("dx5ii — user manual", out)
-        self.assertIn("=" * 10, out)
+        self.assertIn("dx5ii - user manual", out)
+        self.assertNotIn("# dx5ii", out)
 
     def test_named_section(self):
         code, out, _ = run("peq")
         self.assertEqual(code, 0)
         self.assertIn("PEQ presets", out)
-        self.assertIn("===========", out)
+        self.assertNotIn("# PEQ presets", out)
 
     def test_unknown_section_is_an_error(self):
         code, _, err = run("nope")
@@ -72,7 +72,7 @@ class RenderingTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertNotIn("```", out)
         self.assertNotIn("| ---", out)
-        self.assertIn("PEQ presets\n===========", out)
+        self.assertIn("PEQ presets", out)
 
     def test_markdown_flag_returns_the_file(self):
         code, out, _ = run("peq", markdown=True)

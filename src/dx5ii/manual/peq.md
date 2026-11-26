@@ -35,8 +35,8 @@ the web page has to be used again.
 
 ## Preamp
 
-Each channel has its own preamp, from −12 dB to +12 dB. `peq list` prints
-`preamp L+R 0.0 dB` when both channels match, and `L … R …` when they do not. A
+Each channel has its own preamp, from -12 dB to +12 dB. `peq list` prints
+`preamp L+R 0.0 dB` when both channels match, and `L ... R ...` when they do not. A
 preset whose left channel is disabled is flagged as `L disabled`.
 
 ## Band types and what the device stores
@@ -50,7 +50,7 @@ preset whose left channel is disabled is flagged as `L disabled`.
 | `HS` | 5 | used | used as shelf slope |
 
 The gain is stored in 0.1 dB steps, the frequency as a whole number of Hz, and
-the Q as `round(Q × 10000)`. Values you send are rounded the same way, so an
+the Q as `round(Q x 10000)`. Values you send are rounded the same way, so an
 exact read-back of a fractional value is not expected.
 
 ## Creating presets
@@ -65,7 +65,7 @@ dx5ii peq copy SPEAKER "Desk"
 name. `peq copy` duplicates an existing preset, which keeps its preamp and its
 per-channel enables.
 
-Both refuse a name that already exists — use `peq overwrite` to replace a
+Both refuse a name that already exists - use `peq overwrite` to replace a
 preset. Both also refuse the names `on` and `off`, because `dx5ii peq on` and
 `dx5ii peq off` are commands: a preset with that name could not be addressed.
 
@@ -90,11 +90,11 @@ Rules for `--from-apo`:
   (`Device: DX5 II`) are read. Other sections in the same file are ignored.
 - If the file has no `Device:` line at all, the whole file is read.
 - `Preamp: -6.0 dB` becomes the channel preamp. Without it the preamp is 0 dB.
-- Numbered (`Filter 3: ON PK …`) and unnumbered (`Filter: ON PK …`) lines are
+- Numbered (`Filter 3: ON PK ...`) and unnumbered (`Filter: ON PK ...`) lines are
   both accepted.
 - `HP` and `LP` need no `Gain`; Equalizer APO does not write one for them.
 - The whole file must map onto the device. An unknown type, a missing gain on a
-  type that needs one, or more than 11 bands is an error — nothing is written.
+  type that needs one, or more than 11 bands is an error - nothing is written.
 
 ## Exporting
 

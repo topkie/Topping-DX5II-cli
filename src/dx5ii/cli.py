@@ -71,7 +71,6 @@ from .peq import (
     rename_preset,
 )
 from .protocol import format_firmware
-from .textfmt import render_markdown
 
 
 class ExitCode(IntEnum):
@@ -176,12 +175,38 @@ def _cmd_manual(args: argparse.Namespace) -> int:
     if getattr(args, "markdown", False):
         print(text, end="" if text.endswith("\n") else "\n")
         return 0
+
+    # Imported here: the other commands must not pay rich's import cost.
+    from rich.console import Console
+    from rich.markdown import Markdown
+
     columns = shutil.get_terminal_size((80, 24)).columns
     width = max(60, min(columns, 100))
+    buffer = io.StringIO()
+    Console(file=buffer, width=width, highlight=False, soft_wrap=False,
+            no_color=True).print(Markdown(text, hyperlinks=False))
+    rendered = buffer.getvalue()
     encoding = (getattr(sys.stdout, "encoding", "") or "").lower()
-    print(render_markdown(text, width=width, ascii_only="utf" not in encoding),
-          end="")
+    if "utf" not in encoding:
+        rendered = _ascii_fold(rendered)
+    print(rendered, end="" if rendered.endswith("\n") else "\n")
     return 0
+
+
+#: Box-drawing and bullet characters rich emits, mapped for non-UTF consoles.
+_ASCII_FOLD = {
+    "\u2022": "*", "\u2500": "-", "\u2502": "|", "\u250c": "+", "\u2510": "+",
+    "\u2514": "+", "\u2518": "+", "\u251c": "+", "\u2524": "+", "\u252c": "+",
+    "\u2534": "+", "\u253c": "+", "\u2550": "=", "\u2551": "|", "\u2554": "+",
+    "\u2557": "+", "\u255a": "+", "\u255d": "+", "\u2560": "+", "\u2563": "+",
+    "\u2566": "+", "\u2569": "+", "\u256c": "+", "\u2013": "-", "\u2014": "-",
+    "\u2026": "...", "\u2192": "->",
+}
+
+
+def _ascii_fold(text: str) -> str:
+    """Replace the decorative characters rich emits with ASCII equivalents."""
+    return "".join(_ASCII_FOLD.get(ch, ch) for ch in text)
 
 
 def build_parser() -> argparse.ArgumentParser:

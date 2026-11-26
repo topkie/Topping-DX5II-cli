@@ -120,11 +120,17 @@ def _pushed_rows(pushed: dict[str, Any]) -> Iterable[tuple[str, Any]]:
         yield key, value
 
 
+def _column_width(rows: Iterable[tuple[str, Any]], floor: int) -> int:
+    """Width of the name column: the longest name plus two, never below floor."""
+    return max([floor] + [len(name) + 2 for name, _ in rows])
+
+
 def _print_rows(title: str, rows: Iterable[tuple[str, Any]]) -> None:
     print(f"[{title}]")
-    for key, value in rows:
-        if value is not None:
-            print(f"  {key:<26} {format_value(key, value)}")
+    items = [(key, value) for key, value in rows if value is not None]
+    width = _column_width(items, 26)
+    for key, value in items:
+        print(f"  {key:<{width}} {format_value(key, value)}")
 
 
 def print_frames(frames: list[dict[str, Any]]) -> None:
@@ -225,9 +231,15 @@ def print_switch_report(report: dict[str, Any]) -> None:
 
 
 def print_field_rows(rows: Iterable[tuple[str, Any]]) -> None:
-    """Print ``name  value`` lines, as ``dx5ii get <field>`` does."""
-    for name, value in rows:
-        print(f"{name:<20} {format_value(name, value)}")
+    """Print ``name  value`` lines, as ``dx5ii get <field>`` does.
+
+    The name column grows to fit the longest name, so a field such as
+    ``crossfeed_simple_options`` cannot push its value out of alignment.
+    """
+    items = list(rows)
+    width = _column_width(items, 20)
+    for name, value in items:
+        print(f"{name:<{width}} {format_value(name, value)}")
 
 
 def format_gain(value: float) -> str:

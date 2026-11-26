@@ -48,8 +48,8 @@ A different cause is a value the device clamps, such as a Q above the maximum.
 The device can play an EQ configuration that lives on the TOPPING account
 instead of one of its stored presets. In that state the stored preset is not
 audible, and this tool cannot bring the cloud configuration back: the content is
-not on the device. When the device leaves that state — for example because you
-ran `dx5ii --set-config` — you have to select the cloud configuration again in
+not on the device. When the device leaves that state - for example because you
+ran `dx5ii --set-config` - you have to select the cloud configuration again in
 TOPPING Home.
 
 ## The sound is not the stored preset and `peq preview --stop` fixes it

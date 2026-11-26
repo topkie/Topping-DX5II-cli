@@ -1,4 +1,4 @@
-# dx5ii — user manual
+# dx5ii - user manual
 
 `dx5ii` reads and writes the settings of a TOPPING DX5 II DAC over USB HID
 (VID `0x152A`, PID `0x8750`, control protocol on interface `MI_02`).
@@ -43,7 +43,7 @@ single field with `get` skips the preset list and takes about 0.4 seconds.
 | `dx5ii get <field>...` | read named fields |
 | `dx5ii set <field> <value>...` | write fields, then read back |
 | `dx5ii configs` | list the EQ presets stored on the device |
-| `dx5ii peq list\|show\|create\|delete\|rename\|preview\|overwrite` | preset contents |
+| `dx5ii peq <subcommand>` | preset contents (see the peq section) |
 | `dx5ii raw <cmd> [data]` | send one frame, print the replies; `--force` for dangerous commands |
 | `dx5ii watch [seconds]` | count frames for a while, or `-f` to stream them |
 | `dx5ii manual [section]` | this manual |
