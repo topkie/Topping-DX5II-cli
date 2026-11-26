@@ -22,15 +22,15 @@ DX5 II 的固件从 `V2.39` 开始支持 Web Home，cli 只在固件 2.58 上验
 pip install dx5ii-cli
 ```
 
-只依赖 `hidapi`。只要 Topping Web Home 能连接上设备即可，不需要官方应用在跑。
+依赖两个包：`hidapi`（与设备通信）与 `rich`（`dx5ii manual` 的终端渲染，其它命令不用它）。只要 Topping Web Home 能连接上设备即可，不需要官方应用在跑。
 
 确认安装：
 ```bash
-dx5ii --version        # dx5ii 版本
-dx5ii --devices        # 列出 HID 接口，确认能看到 DX5 II
-dx5ii --fast           # 读一遍状态
+dx5ii --version                # dx5ii 版本
+dx5ii devices                  # 列出 HID 接口，确认能看到 DX5 II
+dx5ii status --fast            # 读一遍状态（跳过预设列表）
 ```
---devices 是最快的连通性检查：它不发送任何协议帧，只枚举 HID。
+`devices` 是最快的连通性检查：它不发送任何协议帧，只枚举 HID。
 
 从源码安装：
 ```
@@ -48,21 +48,20 @@ python -m dx5ii get
 ## 命令行
 
 ```bash
-dx5ii                                   # 读全状态（含 EQ 预设列表）
-dx5ii --fast                            # 同上，跳过预设列表
-dx5ii --json                            # 输出 JSON
+dx5ii                                   # 读全状态（含 EQ 预设列表），等同 status
+dx5ii status --fast                     # 同上，跳过预设列表
 dx5ii status --frames                   # 状态 + 本次读到的每一帧（相对毫秒）
-dx5ii devices                           # 与 --devices 相同的接口列表
-dx5ii --devices                         # 枚举 HID 接口（含固件版本），标出协议口
-dx5ii --set-output hp_balanced          # 只切输出端口，然后读回
-dx5ii peq on                            # 打开 EQ（等同 set peq on）
-dx5ii peq off                           # 关闭 EQ
+dx5ii status --json                     # 输出 JSON
+dx5ii devices                           # 枚举 HID 接口（含固件版本），标出协议口
+dx5ii output hp_balanced                # 只切输出端口，然后读回
 dx5ii peq switch Dynamic                # 按名字或索引切换预设
+dx5ii peq on                            # 打开 EQ
+dx5ii peq off                           # 关闭 EQ
 dx5ii scene recall c1                   # 调用设备上的场景 C1，并报告改了哪些项
 dx5ii scene save c1                     # 用当前状态覆盖场景 C1
-dx5ii --set-config Dynamic              # 同一动作，保留为顶层参数
-dx5ii --set-output hp_balanced --set-config Dynamic
 ```
+
+端口和预设是两件事：要同时切，写两条命令；或者把它们存成一个场景，用 `scene recall` 一次完成。
 
 `dx5ii` 输出的第一行带设备固件版本，取自 USB `bcdDevice` 描述符（JSON 里的 `release_number`），
 形如 `firmware=2.58`。
@@ -72,7 +71,7 @@ dx5ii --set-output hp_balanced --set-config Dynamic
 选项名字数组的掩码在 settings 块里（`output_option_mask`），布尔字段保持布尔。偏好数字的脚本读
 `*_raw` 键即可，不需要从显示字符串里反解析。
 
-`--set-config` 也能结束 Topping Home 的云端预览。云端配置在放时设备仍保留自己的存储槽位，所以
+`peq switch` 也能结束 Topping Home 的云端预览。云端配置在放时设备仍保留自己的存储槽位，所以
 「索引与存储槽相同」并不代表它可听——命令照样会发，正是这一发把设备切回本地预设：
 
 ```
@@ -131,8 +130,7 @@ dx5ii manual peq --markdown             # 输出原始 markdown，而不是终�
 ## EQ 预设
 
 ```bash
-dx5ii configs                                    # 当前音源、存储槽位与全部预设
-dx5ii peq list                                   # 列出预设（设备存储的当前项标 ←）
+dx5ii peq                                        # 当前音源、存储槽位与全部预设（configs 同义）
 dx5ii peq show Dynamic                           # 打印左右声道每段的频点/增益/Q
 dx5ii peq import delta.txt --name MyPreset       # 导入 APO 配置里本机对应的 Device 段
 dx5ii peq copy Dynamic MyPreset                  # 复制一份新预设
@@ -151,8 +149,8 @@ dx5ii peq overwrite MyPreset --copy Other --backup before.json
 
 `peq preview` 用设备的临时滤波器组试听一个预设，不写进存储的槽位；`--from-apo` 对 Equalizer APO 文件做同样的事，解析规则与 `peq import` 相同，但不建预设。各段通过逐段实时参数命令
 （`0x9101`–`0x9B0A`）写入，设备只在预览上下文里接受它们——单发一条不起作用。存储的槽位不受影响，
-`--stop` 把预览状态写回未激活。预设若禁用了某个声道（`peq list` 标 `L disabled`），试听也照这个启用位写，听起来与预设本身一致。若进程在 `--stop` 之前结束，设备会继续播放临时组：
-`dx5ii --set-config <槽位>` 能结束它，但预览本身之后无法再打开。
+`--stop` 把预览状态写回未激活。预设若禁用了某个声道（`dx5ii peq` 标 `L disabled`），试听也照这个启用位写，听起来与预设本身一致。若进程在 `--stop` 之前结束，设备会继续播放临时组：
+`dx5ii peq switch <槽位>` 能结束它，但预览本身之后无法再打开。
 
 `peq overwrite` 整份替换一个存储预设。来源用 `--from-apo FILE`、`--copy PRESET` 或 `--last`
 指定，预设名字保持不动。它会先结束正在进行的预览——预览期间的写入会进临时组而不是预设。
@@ -163,11 +161,31 @@ dx5ii peq overwrite MyPreset --copy Other --backup before.json
 `%LOCALAPPDATA%\\dx5ii\\last-preview.json` 与系统临时目录）。文件里只有上一次试听的配置。
 `pip uninstall dx5ii-cli` 不会删它，需要的话手动删掉那个文件即可。
 
-`--from-apo` 只读 `Device:` 名与本机一致的那一段（名字就是 `dx5ii --devices` 打印的产品名）；
+`--from-apo` 只读 `Device:` 名与本机一致的那一段（名字就是 `dx5ii devices` 打印的产品名）；
 文件里完全没有 `Device:` 行时，整份文件视为该设备。设备存 PK、LP、HP、LS、HS 五类，其它类型
 （`BP`、`NE` 等）会让导入直接报错，不会跳过；APO 的 `HP`/`LP` 行没有 `Gain` 字段，按 0 dB 导入；一段超过 11 条也报错。`Preamp:` 行会写进预设的前级增益（−12…+12 dB）。没有任何静默丢弃。
 
-退出码：`0` 成功，`2` 设备/参数错误，`3` 写入后回读没变。
+退出码：`0` 成功，`1` 用法错误，`2` 设备/参数错误，`3` 写入后回读没变，`4` 设备没有在时限内回包。
+
+## 旧写法（0.1.x 兼容期）
+
+0.1.0 起命令按「状态 / 设备 / 输出 / 预设 / 场景」分组。下面的旧写法仍能用，但每条都会在 stderr
+提示新写法，**0.1.2 之后移除**：
+
+| 旧写法 | 请改用 | 说明 |
+|---|---|---|
+| `dx5ii --devices` | `dx5ii devices` | |
+| `dx5ii --fast` | `dx5ii status --fast` | |
+| `dx5ii --raw` | `dx5ii status --frames` | 帧记录改为相对毫秒，并解出 `cmd` / `cur` / `total` / `data` |
+| `dx5ii --set-output hp_balanced` | `dx5ii output hp_balanced` | |
+| `dx5ii --set-config Dynamic` | `dx5ii peq switch Dynamic` | |
+| `dx5ii --set-output X --set-config Y` | 两条命令，或 `dx5ii scene recall c1` | 组合写法不再保留 |
+| `dx5ii peq list` | `dx5ii peq` | |
+| `dx5ii peq create NAME --from-apo FILE` | `dx5ii peq import FILE --name NAME` | |
+| `dx5ii peq create NAME --copy SRC` | `dx5ii peq copy SRC NAME` | |
+| `--activate` | 默认就停在新预设；要回切用 `--no-switch` | 静默接受，不提示 |
+
+`dx5ii configs` 不在清理之列，它与 `dx5ii peq` 永久等价。
 
 ## 库用法
 
@@ -245,10 +263,9 @@ frames = encode_field("volume", -40.0, {"volume_step": "half_db"})
 
 - **设备名不可写**。`0x7127` 只有读方向，固件没有接收名字的处理器。
 - **切 UAC 会重枚举**。改成 `uac1` 后 USB 描述符重建，后续写返回 `-1`。切完等约 3 秒、重新打开。
-- **9 个动作只能走 `raw`**：`disable-controller`、`call-c1/c2`、`execute-remote-a/b`、
-  `heartbeat`、`save-c1/c2`、`clear-pairing`。它们没有回读状态。
-  恢复出厂设置同样只剩 `raw 0x710B 1 --force`，它不再是 `set` 字段。
-- **切输出端口会连带改 EQ 和音量**。两者都按端口分别记忆，切回原端口即恢复。
+- **有五个动作只有 `set`，读不回状态**：`disable-controller`、`execute-remote-a/b`、`heartbeat`、
+  `clear-pairing`。`call-c1/c2` 与 `save-c1/c2` 已有语义更清楚的 `scene recall` / `scene save`。
+  恢复出厂设置只剩 `raw 0x710B 1 --force`，它不是 `set` 字段。
 - **`0x1206` 只读**。切预设用 `0x110E`。
 - **`raw` 会拒绝两个命令**：`0x710B`（恢复出厂）与 `0x712E`（固件更新模式）。后者会让设备直接离开
   USB，只有重新刷写固件才能恢复。确需发送时加 `--force`。

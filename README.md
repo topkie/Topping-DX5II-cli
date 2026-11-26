@@ -26,18 +26,19 @@ on it.
 pip install dx5ii-cli
 ```
 
-Only `hidapi` is required — the device just has to be reachable from Topping Web Home. The
-official app itself does not need to be running.
+Two dependencies: `hidapi` to talk to the device and `rich` to render `dx5ii manual` (no other
+command uses it). The device just has to be reachable from Topping Web Home; the official app itself
+does not need to be running.
 
 Confirm the install:
 
 ```bash
-dx5ii --version        # dx5ii version
-dx5ii --devices        # list HID interfaces, check the DX5 II is visible
-dx5ii --fast           # read the state once
+dx5ii --version                # dx5ii version
+dx5ii devices                  # list HID interfaces, check the DX5 II is visible
+dx5ii status --fast            # read the state once, skipping the preset upload
 ```
 
-`--devices` is the quickest connectivity check: it sends no protocol frames, it only enumerates HID.
+`devices` is the quickest connectivity check: it sends no protocol frames, it only enumerates HID.
 
 From source:
 
@@ -56,21 +57,21 @@ python -m dx5ii get
 ## CLI
 
 ```bash
-dx5ii                                   # full state, including the preset list
-dx5ii --fast                            # same, skip the preset upload
-dx5ii --json                            # JSON output
+dx5ii                                   # full state, including the preset list; same as status
+dx5ii status --fast                     # same, skip the preset upload
 dx5ii status --frames                   # state plus every frame read (ms since open)
-dx5ii devices                           # same interface list as --devices
-dx5ii --devices                         # list HID interfaces (+ firmware), mark the protocol one
-dx5ii --set-output hp_balanced          # switch output only, then read back
-dx5ii peq on                            # turn EQ on (same as set peq on)
-dx5ii peq off                           # turn EQ off
+dx5ii status --json                     # JSON output
+dx5ii devices                           # list HID interfaces (+ firmware), mark the protocol one
+dx5ii output hp_balanced                # switch output only, then read back
 dx5ii peq switch Dynamic                # switch preset by name or index
+dx5ii peq on                            # turn EQ on
+dx5ii peq off                           # turn EQ off
 dx5ii scene recall c1                   # restore device scene C1, report what changed
 dx5ii scene save c1                     # overwrite C1 with the current state
-dx5ii --set-config Dynamic              # the same, kept as a top-level flag
-dx5ii --set-output hp_balanced --set-config Dynamic
 ```
+
+The output port and the preset are separate things: to change both, run two commands, or store the
+pair as a device scene and restore it with one `scene recall`.
 
 The first line of `dx5ii` output carries the device's firmware version, read from the USB
 `bcdDevice` descriptor (`release_number` in JSON), e.g. `firmware=2.58`.
@@ -81,7 +82,7 @@ The first line of `dx5ii` output carries the device's firmware version, read fro
 (`output_option_mask`), and booleans stay booleans. Scripts that prefer numbers read the `*_raw`
 key; nothing has to be parsed out of a display string.
 
-`--set-config` also ends a Topping Home cloud preview. While a cloud config is playing, the
+`peq switch` also ends a Topping Home cloud preview. While a cloud config is playing, the
 device keeps its stored slot, so an index that already matches the stored slot still needs the
 switch — that write is what returns the device to a local preset:
 
@@ -154,8 +155,7 @@ lists (`input-option usb,bt`), volumes (`-40.0`) and timeouts (`off`/`10s`/`30s`
 ## PEQ presets
 
 ```bash
-dx5ii configs                                    # current source, stored slot and slots
-dx5ii peq list                                   # presets, stored one marked with ←
+dx5ii peq                                        # current source, stored slot and slots (configs is the same)
 dx5ii peq show Dynamic                           # per-band freq/gain/Q, both channels
 dx5ii peq import delta.txt --name MyPreset       # import one Device section of an APO config
 dx5ii peq copy Dynamic MyPreset                  # duplicate a preset
@@ -177,9 +177,9 @@ holds, use `peq overwrite` below; there is no per-band editor that leaves the re
 but creating no preset. The bands go
 through the per-band live-parameter commands (`0x9101`-`0x9B0A`), which the device only accepts
 inside a preview; one of them sent on its own does nothing. The stored slot is untouched, and
-`--stop` writes the preview meta back to inactive. A preset whose left channel is disabled (`peq list`
+`--stop` writes the preview meta back to inactive. A preset whose left channel is disabled (`dx5ii peq`
 marks it `L disabled`) keeps that bit in the preview, so the audition sounds the way the preset does. If the process dies before `--stop` the unit
-keeps playing the scratch set: `dx5ii --set-config <slot>` ends it, but the preview itself cannot
+keeps playing the scratch set: `dx5ii peq switch <slot>` ends it, but the preview itself cannot
 be reopened afterwards.
 
 `peq overwrite` replaces a stored preset in place. `--from-apo FILE`, `--copy PRESET` or `--last`
@@ -193,14 +193,35 @@ The preview hand-off used by `--last` lives in `~/.dx5ii/last-preview.json`
 writable). It holds only the last previewed config. `pip uninstall dx5ii-cli` does not remove it,
 so delete that file by hand if you want it gone.
 
-`--from-apo` reads the `Device:` section named after the connected unit (the name `dx5ii --devices`
+`--from-apo` reads the `Device:` section named after the connected unit (the name `dx5ii devices`
 prints); a file with no `Device:` line is taken as describing that one device. The device stores
 PK, LP, HP, LS and HS bands; any other type (`BP`, `NE`, ...) stops the import with an error
 instead of being dropped, and more than 11 filters in one section is an error too.
 `HP` / `LP` lines carry no `Gain` in Equalizer APO and are imported at 0 dB. A `Preamp:` line
 is written into the preset's preamp words (`-12` to `+12` dB). Nothing is imported silently.
 
-Exit codes: `0` OK, `2` device/argument error, `3` write not observed on read-back.
+Exit codes: `0` OK, `1` usage error, `2` device/argument error, `3` write not observed on read-back,
+`4` the device did not reply in time.
+
+## Legacy spellings (0.1.x compatibility)
+
+Since 0.1.0 the commands are grouped as state / device / output / preset / scene. The spellings below
+still work, but each one prints a hint on stderr, and **they are removed after 0.1.2**:
+
+| Legacy | Use instead | Notes |
+|---|---|---|
+| `dx5ii --devices` | `dx5ii devices` | |
+| `dx5ii --fast` | `dx5ii status --fast` | |
+| `dx5ii --raw` | `dx5ii status --frames` | Frames are now relative milliseconds with `cmd` / `cur` / `total` / `data` decoded |
+| `dx5ii --set-output hp_balanced` | `dx5ii output hp_balanced` | |
+| `dx5ii --set-config Dynamic` | `dx5ii peq switch Dynamic` | |
+| `dx5ii --set-output X --set-config Y` | two commands, or `dx5ii scene recall c1` | The combined form is not kept |
+| `dx5ii peq list` | `dx5ii peq` | |
+| `dx5ii peq create NAME --from-apo FILE` | `dx5ii peq import FILE --name NAME` | |
+| `dx5ii peq create NAME --copy SRC` | `dx5ii peq copy SRC NAME` | |
+| `--activate` | Staying on the new preset is the default; use `--no-switch` to go back | Accepted silently, no hint |
+
+`dx5ii configs` is not going away: it stays a permanent alias of `dx5ii peq`.
 
 ## Library
 
@@ -283,10 +304,9 @@ Everything except `device.py` is hardware-free, so recorded frames are enough fo
 - **Device name is read-only.** `0x7127` has no receive handler in the firmware.
 - **Switching UAC re-enumerates the device.** After `uac1` the USB descriptors are rebuilt and the
   next write returns `-1`; wait ~3 s and reopen.
-- **Nine actions only work through `raw`** (`disable-controller`, `call-c1/c2`,
-  `execute-remote-a/b`, `heartbeat`, `save-c1/c2`, `clear-pairing`) because they have no read-back.
-  A factory reset is `raw 0x710B 1 --force`; it is no longer a `set` field.
-- **Switching the output port also changes EQ and volume.** Both are remembered per port.
+- **Five actions only have `set` and no read-back**: `disable-controller`, `execute-remote-a/b`,
+  `heartbeat`, `clear-pairing`. `call-c1/c2` and `save-c1/c2` have the clearer `scene recall` /
+  `scene save`. A factory reset is `raw 0x710B 1 --force`; it is no longer a `set` field.
 - **`0x1206` is read-only**; use `0x110E` to switch presets.
 - **`raw` refuses two commands**: `0x710B` (factory reset) and `0x712E` (firmware update mode).
   The second one drops the device off USB and it does not come back until a firmware image is
